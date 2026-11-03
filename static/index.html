@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Margin</title>
 <link href="vendor/fonts/fonts.css" rel="stylesheet">
-<script src="vendor/editor.js?v=37"></script>
+<script src="vendor/editor.js?v=38"></script>
 <style>
 :root{
   color-scheme:dark;
@@ -769,7 +769,7 @@ let busy = false;
 
 const $ = s => document.querySelector(s);
 const el = (tag, props = {}) => Object.assign(document.createElement(tag), props);
-const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const words = t => (t.trim().match(/\S+/g) || []).length;
 const uid = () => Math.random().toString(36).slice(2, 9);
 const tpl = () => TEMPLATES[state.templateId] || TEMPLATES.design;
