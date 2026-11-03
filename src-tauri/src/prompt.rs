@@ -68,9 +68,11 @@ pub fn build(body: &Value) -> String {
         let tag = if s(&m["role"]) == "user" { "writer" } else { "coach" };
         format!("<{tag}>\n{}\n</{tag}>", s(&m["content"]))
     }).collect();
+    let feedback = s(&body["feedback"]).trim();
+    let past = if feedback.is_empty() { String::new() } else { format!("<past_feedback>\n{}\n</past_feedback>\n", feedback.chars().take(20_000).collect::<String>()) };
     format!(
-        "<conversation_so_far>\n{}\n</conversation_so_far>\n{}{}\n\n<writer_message>\n{}\n</writer_message>",
-        convo.join("\n"), render_attachments(body), render_context(body), last
+        "<conversation_so_far>\n{}\n</conversation_so_far>\n{}{}{}\n\n<writer_message>\n{}\n</writer_message>",
+        convo.join("\n"), past, render_attachments(body), render_context(body), last
     )
 }
 

@@ -403,6 +403,35 @@ fn style_set(app: AppHandle, text: String) -> Result<(), String> {
     std::fs::write(workspace(&app)?.join("style.md"), text).map_err(|e| e.to_string())
 }
 
+/// Real reviewer feedback for the workspace (feedback.md): calibrates the panels.
+#[tauri::command]
+fn feedback_get(app: AppHandle) -> Result<String, String> {
+    Ok(std::fs::read_to_string(workspace(&app)?.join("feedback.md")).unwrap_or_default())
+}
+#[tauri::command]
+fn feedback_set(app: AppHandle, text: String) -> Result<(), String> {
+    std::fs::write(workspace(&app)?.join("feedback.md"), text).map_err(|e| e.to_string())
+}
+
+/// Document history: one Markdown snapshot per review round, under <doc>/history/.
+#[tauri::command]
+fn doc_snapshot(app: AppHandle, id: String, markdown: String, label: String) -> Result<String, String> {
+    let dir = doc_dir(&app, &id)?.join("history");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let safe: String = label.chars().map(|c| if c.is_alphanumeric() || c == '.' || c == '-' { c } else { '-' }).collect();
+    let name = format!("{}-{}.md", now_ms(), safe.chars().take(40).collect::<String>());
+    std::fs::write(dir.join(&name), markdown).map_err(|e| e.to_string())?;
+    Ok(name)
+}
+#[tauri::command]
+fn history_list(app: AppHandle, id: String) -> Result<Vec<serde_json::Value>, String> {
+    Ok(list_dir(&doc_dir(&app, &id)?.join("history")))
+}
+#[tauri::command]
+fn history_read(app: AppHandle, id: String, name: String) -> Result<String, String> {
+    std::fs::read_to_string(doc_dir(&app, &id)?.join("history").join(safe_name(&name)?)).map_err(|e| e.to_string())
+}
+
 /// Shared files: context any document can attach.
 #[tauri::command]
 fn files_list(app: AppHandle) -> Result<Vec<serde_json::Value>, String> { Ok(list_dir(&workspace(&app)?.join("files"))) }
@@ -423,6 +452,53 @@ fn file_read(app: AppHandle, name: String) -> Result<String, String> {
 #[tauri::command]
 fn file_delete(app: AppHandle, name: String) -> Result<(), String> {
     std::fs::remove_file(workspace(&app)?.join("files").join(safe_name(&name)?)).map_err(|e| e.to_string())
+}
+
+/* ---------- publish to Confluence ---------- */
+/// Creates a child page under `parent_url` (a page link) with the document's HTML, or updates `page_id` if given.
+#[tauri::command]
+async fn confluence_publish(parent_url: String, title: String, html: String, email: String, token: String, page_id: Option<String>) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let u = reqwest::Url::parse(parent_url.trim()).map_err(|_| "That is not a valid page link.".to_string())?;
+        let segs: Vec<&str> = u.path_segments().map(|s| s.collect()).unwrap_or_default();
+        let parent = segs.iter().position(|s| *s == "pages").and_then(|i| segs.get(i + 1)).map(|s| s.to_string())
+            .filter(|s| !s.is_empty() && s.chars().all(|c| c.is_ascii_digit()))
+            .ok_or("Cannot find a page id in that link. Use the parent page URL from your browser.")?;
+        let base = format!("{}://{}", u.scheme(), u.host_str().unwrap_or_default());
+        let client = reqwest::blocking::Client::builder().timeout(std::time::Duration::from_secs(40)).build().map_err(|e| e.to_string())?;
+        let auth = |r: reqwest::blocking::RequestBuilder| r.basic_auth(email.trim(), Some(token.trim())).header("Accept", "application/json");
+        let fail = |status: reqwest::StatusCode, what: &str| -> String {
+            match status.as_u16() {
+                401 | 403 => "Confluence refused the login. Check the email and the API token.".into(),
+                404 => format!("Confluence did not find the {what} with this account."),
+                s => format!("Confluence answered {s} while {what}."),
+            }
+        };
+        // Parent page gives the space.
+        let res = auth(client.get(format!("{base}/wiki/api/v2/pages/{parent}"))).send().map_err(|e| format!("Could not reach Confluence: {e}"))?;
+        if !res.status().is_success() { return Err(fail(res.status(), "parent page")); }
+        let pv: serde_json::Value = res.json().map_err(|e| e.to_string())?;
+        let space = pv["spaceId"].as_str().unwrap_or("").to_string();
+        let body = serde_json::json!({ "representation": "storage", "value": html });
+        let (res, verb) = match page_id.filter(|p| !p.is_empty()) {
+            Some(pid) => {
+                let cur = auth(client.get(format!("{base}/wiki/api/v2/pages/{pid}"))).send().map_err(|e| e.to_string())?;
+                if !cur.status().is_success() { return Err(fail(cur.status(), "page to update")); }
+                let cv: serde_json::Value = cur.json().map_err(|e| e.to_string())?;
+                let next = cv["version"]["number"].as_i64().unwrap_or(1) + 1;
+                (auth(client.put(format!("{base}/wiki/api/v2/pages/{pid}"))).json(&serde_json::json!({ "id": pid, "status": "current", "title": title, "body": body, "version": { "number": next, "message": "Updated from Margin" } })).send(), "updating the page")
+            }
+            None => (auth(client.post(format!("{base}/wiki/api/v2/pages"))).json(&serde_json::json!({ "spaceId": space, "status": "current", "title": title, "parentId": parent, "body": body })).send(), "creating the page"),
+        };
+        let res = res.map_err(|e| format!("Could not reach Confluence: {e}"))?;
+        if !res.status().is_success() { return Err(fail(res.status(), verb)); }
+        let v: serde_json::Value = res.json().map_err(|e| e.to_string())?;
+        let id = v["id"].as_str().unwrap_or("").to_string();
+        let link = v["_links"]["webui"].as_str().map(|w| format!("{base}/wiki{w}")).unwrap_or_default();
+        Ok(serde_json::json!({ "id": id, "url": link }))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /* ---------- import from Confluence ---------- */
@@ -470,7 +546,7 @@ fn save_markdown(app: AppHandle, name: String, text: String) -> Result<String, S
 fn main() {
     tauri::Builder::default()
         .manage(Coach::default())
-        .invoke_handler(tauri::generate_handler![ask, save_markdown, extract_pdf, ws_info, ws_use, ws_forget, reveal, docs_list, doc_create, doc_load, doc_save, doc_delete, asset_save, diagrams_list, diagram_save, diagram_load, diagram_delete, files_list, file_add, file_read, file_delete, library_load, library_save, confluence_fetch, settings_get, settings_set, style_get, style_set])
+        .invoke_handler(tauri::generate_handler![ask, save_markdown, extract_pdf, ws_info, ws_use, ws_forget, reveal, docs_list, doc_create, doc_load, doc_save, doc_delete, asset_save, diagrams_list, diagram_save, diagram_load, diagram_delete, files_list, file_add, file_read, file_delete, library_load, library_save, confluence_fetch, settings_get, settings_set, style_get, style_set, feedback_get, feedback_set, doc_snapshot, history_list, history_read, confluence_publish])
         .run(tauri::generate_context!())
         .expect("error while running Margin");
 }

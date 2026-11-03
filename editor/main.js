@@ -439,6 +439,7 @@ function toolbar() {
   const row = document.createElement('div'); row.className = 'bubble-row'
   const mk = (label, cls, title) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.className = cls; b.title = title || label; return b }
   const ask = mk('✦ Ask coach', 'b-ask', 'Send this part to the coach')
+  const draw = mk('Draw', 'b-draw', 'Turn this text into a diagram')
   const turn = mk('Text', 'b-turn', 'Turn into')
   const marks = [
     ['B', 'bold', 'Bold ⌘B', c => c.toggleBold()],
@@ -448,13 +449,13 @@ function toolbar() {
     ['</>', 'code', 'Code ⌘E', c => c.toggleCode()],
   ].map(([label, name, title, run]) => { const b = mk(label, 'b-' + name, title); b.dataset.name = name; b._run = run; return b })
   const link = mk('Link', 'b-link', 'Link ⌘K'); link.dataset.name = 'link'
-  row.append(ask, turn, ...marks, link)
+  row.append(ask, draw, turn, ...marks, link)
   const linkRow = document.createElement('form'); linkRow.className = 'bubble-link'; linkRow.hidden = true; linkRow.noValidate = true
   const input = document.createElement('input'); input.type = 'text'; input.placeholder = 'Paste a link and press Enter'; input.spellcheck = false
   const remove = mk('Remove', 'b-remove')
   linkRow.append(input, remove)
   el.append(row, linkRow)
-  return { el, turn, marks, link, ask, linkRow, input, remove }
+  return { el, turn, marks, link, ask, draw, linkRow, input, remove }
 }
 
 /** Empty skeleton: one section heading and an empty paragraph per title. */
@@ -523,7 +524,7 @@ const blockLabel = editor => {
   return 'Text'
 }
 
-export function create({ element, content, hintFor, onChange, onSelect, onAsk, onCommentClick, onImage, onDiagramClick, onDiagram }) {
+export function create({ element, content, hintFor, onChange, onSelect, onAsk, onDraw, onCommentClick, onImage, onDiagramClick, onDiagram }) {
   const bar = toolbar()
   const editor = new Editor({
     element,
@@ -582,6 +583,7 @@ export function create({ element, content, hintFor, onChange, onSelect, onAsk, o
   }
   bar.link.onmousedown = e => { e.preventDefault(); openLink() }
   bar.ask.onmousedown = e => { e.preventDefault(); const { from, to } = editor.state.selection; onAsk?.(editor.state.doc.textBetween(from, to, ' ')) }
+  bar.draw.onmousedown = e => { e.preventDefault(); const { from, to } = editor.state.selection; onDraw?.(editor.state.doc.textBetween(from, to, ' '), to) }
   bar.linkRow.onsubmit = e => {
     e.preventDefault()
     const href = bar.input.value.trim()
@@ -650,6 +652,14 @@ export function create({ element, content, hintFor, onChange, onSelect, onAsk, o
     editor,
     hovered: () => grab.hovered(),
     toolbar: bar.el,
+    html: () => editor.getHTML(),
+    /** Add an empty section at the start or the end of the document. */
+    addSectionAt(title, where) {
+      const d = editor.state.doc
+      const blank = d.childCount === 1 && d.firstChild.type.name === 'paragraph' && d.firstChild.content.size === 0
+      const at = blank ? { from: 0, to: d.content.size } : where === 'start' ? 0 : d.content.size
+      editor.chain().insertContentAt(at, [{ type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: title }] }, { type: 'paragraph' }]).run()
+    },
     /** Replace the whole document with Markdown or HTML (imports). */
     setMarkdown(md) { editor.commands.setContent(md, { contentType: 'markdown' }) },
     setHTML(html) { editor.commands.setContent(html, { contentType: 'html' }) },

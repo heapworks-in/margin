@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Margin</title>
 <link href="vendor/fonts/fonts.css" rel="stylesheet">
-<script src="vendor/editor.js?v=28"></script>
+<script src="vendor/editor.js?v=37"></script>
 <style>
 :root{
   color-scheme:dark;
@@ -376,6 +376,18 @@ mark.c-mark.active{box-shadow:0 0 0 2px var(--accent-soft);filter:saturate(1.4)}
 .router .q p{margin:0;font-size:14px;color:var(--ink)}
 .router .q .ans{display:flex;gap:8px}
 .router .result{font-size:14px;color:var(--ink);line-height:1.6}
+.advance{font-size:13px;color:var(--ink-2);display:flex;flex-direction:column;gap:6px;background:var(--accent-soft);border-radius:8px;padding:8px 10px}
+.ledger{display:flex;flex-direction:column;gap:4px;max-height:40vh;overflow:auto;margin-top:6px}
+.lrow{display:flex;align-items:baseline;gap:10px;font-size:12.5px;padding:4px 6px;border-radius:6px;cursor:pointer}
+.lrow:hover{background:var(--hover)}
+.lrow .q{flex:1;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lrow small{color:var(--muted);white-space:nowrap}
+.lrow.bad small{color:var(--fact)}
+.lesson .teach{grid-column:2;justify-self:start;background:none;border:1px solid var(--line-strong);color:var(--accent-ink);border-radius:999px;padding:1px 8px;font-size:11.5px;cursor:pointer;margin-top:2px}
+.modal .box.wide{width:min(900px,calc(100vw - 40px));max-width:calc(100vw - 40px);min-width:0;overflow:hidden}
+.diff{max-height:60vh;overflow:auto;overflow-wrap:anywhere;word-break:break-all;background:var(--canvas);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:0;font:12.5px/1.5 var(--mono);white-space:pre-wrap}
+.diff .add{color:var(--green)}.diff .del{color:var(--fact);text-decoration:line-through;opacity:.8}.diff .same{color:var(--muted)}
+.bubble .b-draw{color:var(--question)}
 /* heading badge: the only coach element that lives in the text */
 .coach-inline{display:inline;user-select:none;-webkit-user-select:none}
 .hbadge{display:inline-flex;align-items:center;gap:5px;vertical-align:middle;margin-left:12px;padding:2px 8px 2px 6px;border-radius:999px;border:1px solid var(--line);background:var(--panel);font:600 11.5px/1.4 var(--ui);letter-spacing:0;color:var(--muted);cursor:pointer;opacity:.75;transition:opacity .15s,border-color .15s}
@@ -513,6 +525,7 @@ mark.c-mark.active{box-shadow:0 0 0 2px var(--accent-soft);filter:saturate(1.4)}
     <div class="dd-menu">
       <button type="button" id="copy">Copy as Markdown</button>
       <button type="button" id="download">Save as .md to Downloads</button>
+      <button type="button" id="publish-btn">Publish to Confluence…</button>
     </div>
   </details>
   <button type="button" class="btn primary" id="review-all">Review document</button>
@@ -545,12 +558,13 @@ mark.c-mark.active{box-shadow:0 0 0 2px var(--accent-soft);filter:saturate(1.4)}
         <div class="modes">
           <button type="button" data-mode="interview">Interview</button>
           <button type="button" data-mode="review">Review</button>
+          <button type="button" data-mode="rehearse">Rehearse</button>
         </div>
         <div id="actions" class="actions"></div>
         <button type="button" class="tool small" id="thread-show" title="Show the conversation">Conversation</button>
       </div>
       <div class="composer">
-        <textarea id="input" rows="1" placeholder="Ask the coach in any English…" aria-label="Message to coach"></textarea>
+        <textarea id="input" rows="1" placeholder="Ask the coach in any English… (press fn twice to dictate, then Reshape dictation)" aria-label="Message to coach"></textarea>
         <button type="submit" id="send" class="send" aria-label="Send">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 13V3M8 3L3.5 7.5M8 3l4.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
@@ -699,6 +713,9 @@ const store = inApp ? {
   library: { load: () => invoke('library_load').then(JSON.parse), save: items => invoke('library_save', { json: JSON.stringify(items) }) },
   settings: { get: () => invoke('settings_get'), set: value => invoke('settings_set', { value }) },
   style: { get: () => invoke('style_get'), set: text => invoke('style_set', { text }) },
+  feedback: { get: () => invoke('feedback_get'), set: text => invoke('feedback_set', { text }) },
+  history: { snapshot: (id, markdown, label) => invoke('doc_snapshot', { id, markdown, label }), list: id => invoke('history_list', { id }), read: (id, name) => invoke('history_read', { id, name }) },
+  publish: (parentUrl, title, html, email, token, pageId) => invoke('confluence_publish', { parentUrl, title, html, email, token, pageId: pageId || null }),
   files: { list: () => invoke('files_list'), add: (name, data) => invoke('file_add', { name, data }), read: name => invoke('file_read', { name }), remove: name => invoke('file_delete', { name }) },
   confluence: (url, email, token) => invoke('confluence_fetch', { url, email, token }),
 } : {
@@ -715,12 +732,15 @@ const store = inApp ? {
   files: { _k: 'docu-coach-files', list: async function () { return JSON.parse(localStorage.getItem(this._k) || '[]').map(({ name, size, updated }) => ({ name, size, updated })); }, add: async function (name, data) { const l = JSON.parse(localStorage.getItem(this._k) || '[]').filter(f => f.name !== name); l.unshift({ name, data, size: Math.round(data.length * 3 / 4), updated: Date.now() }); localStorage.setItem(this._k, JSON.stringify(l)); return name; }, read: async function (name) { return (JSON.parse(localStorage.getItem(this._k) || '[]').find(f => f.name === name) || {}).data; }, remove: async function (name) { localStorage.setItem(this._k, JSON.stringify(JSON.parse(localStorage.getItem(this._k) || '[]').filter(f => f.name !== name))); } },
   library: { load: async () => JSON.parse(localStorage.getItem('docu-coach-library') || '[]'), save: async items => localStorage.setItem('docu-coach-library', JSON.stringify(items)) },
   style: { get: async () => localStorage.getItem('docu-coach-style') || '', set: async text => localStorage.setItem('docu-coach-style', text) },
+  feedback: { get: async () => localStorage.getItem('docu-coach-feedback') || '', set: async text => localStorage.setItem('docu-coach-feedback', text) },
+  history: { _k: id => 'docu-coach-history:' + id, snapshot: async function (id, markdown, label) { const l = JSON.parse(localStorage.getItem(this._k(id)) || '[]'); const name = `${Date.now()}-${label}.md`; l.unshift({ name, markdown, updated: Date.now(), size: markdown.length }); localStorage.setItem(this._k(id), JSON.stringify(l.slice(0, 20))); return name; }, list: async function (id) { return JSON.parse(localStorage.getItem(this._k(id)) || '[]').map(({ name, updated, size }) => ({ name, updated, size })); }, read: async function (id, name) { return (JSON.parse(localStorage.getItem(this._k(id)) || '[]').find(h => h.name === name) || {}).markdown || ''; } },
+  publish: async () => { throw new Error('Publishing works in the app.'); },
   settings: { get: async () => ({ agent: 'claude', command: '', args: '', model: 'claude-opus-5-5', effort: 'medium', skills: [], useMySettings: false, ...JSON.parse(localStorage.getItem('docu-coach-settings') || '{}') }), set: async function (v) { const cur = await this.get(); const next = { ...cur, ...v }; localStorage.setItem('docu-coach-settings', JSON.stringify(next)); return next; } },
   confluence: async () => { throw new Error('Confluence import works in the app.'); },
 };
 
-const blank = () => ({ id: null, title: '', templateId: 'design', notes: '', docJson: null, current: null, mode: 'review', chat: [], comments: [], checks: {}, audience: '', purpose: '', brief: { ask: '', objection: '', deadline: '', numbers: '', nongoals: '' }, rubric: null, attachments: [], focus: false, threadOpen: false });
-let styleRules = '';
+const blank = () => ({ id: null, title: '', templateId: 'design', notes: '', docJson: null, current: null, mode: 'review', chat: [], comments: [], checks: {}, audience: '', purpose: '', brief: { ask: '', objection: '', deadline: '', numbers: '', nongoals: '' }, rubric: null, claims: [], grades: [], reviewStats: [], publish: null, attachments: [], focus: false, threadOpen: false });
+let styleRules = '', feedbackText = '';
 let savedTimer, saveTimer, saving = false, dirty = false;
 function meta() {
   const all = sections(), n = docWords();
@@ -811,6 +831,7 @@ function buildPaper() {
     onChange: () => { state.docJson = doc.json(); save(); renderOutline(); renderMeta(); scheduleComments(); },
     onSelect: () => { const t = doc.current(); if (t && doc.editor.isFocused) setCurrent(t); const id = doc.editor.isFocused ? doc.commentAtCursor() : null; if (id) { if (id !== popId) showPop(id); } else if (popId && !String(popId).startsWith('section:') && !$('#pop').matches(':hover')) hidePop(); },
     onAsk: text => { setFocus(false); setMode('review'); send(`In the "${state.current}" section, look at this part and tell me what to fix:\n\n"${text.trim()}"`); },
+    onDraw: (text, at) => { if (!text.trim()) return; setMode('review'); send(`Draw this as a diagram:\n\n"${text.trim()}"`, { label: 'Draw · ' + text.trim().slice(0, 50) + (text.length > 50 ? '…' : ''), drawAt: at }); },
     onCommentClick: id => { activate(id, false); showPop(id); },
     onImage: (f, pos) => addImage(f, pos),
     onDiagram: () => openDiagram(null, null),
@@ -838,9 +859,14 @@ function renderMeta() {
     `<span>Sections <b>${have}/${expected}</b> written, <b class="${all.length && ready === all.length ? 'ok' : ''}">${ready}</b> ready</span>` +
     `<span class="${open ? 'warn' : ''}"><b>${open}</b> open ${open === 1 ? 'note' : 'notes'}</span>` +
     (state.rubric ? `<span><button type="button" id="rubric-btn">Rubric <b>${rubricAvg().toFixed(1)}</b> · <span class="verdict ${state.rubric.verdict === 'SHIP' ? 'ship' : 'revise'}">${esc(state.rubric.verdict || 'REVISE')}</span></button></span>` : '') +
+    (state.claims.length ? `<span><button type="button" id="claims-btn">Claims <b>${state.claims.length}</b>${state.claims.filter(c => /^unsupported/i.test(c.source)).length ? ` · <span class="verdict revise">${state.claims.filter(c => /^unsupported/i.test(c.source)).length} unsupported</span>` : ''}</button></span>` : '') +
+    (state.grades.length ? `<span>Rehearsal <b>${(state.grades.reduce((a, g) => a + g.value, 0) / state.grades.length).toFixed(1)}</b>/5</span>` : '') +
+    (state.reviewStats.length ? `<span><button type="button" id="history-btn">History <b>${state.reviewStats.length}</b></button></span>` : '') +
     `<span class="right"><span>Last review <b>${esc(last)}</b></span><span><button type="button" id="lessons-btn">Lessons${rules ? ` <b>${rules}</b>` : ''}</button></span></span>`;
   $('#lessons-btn').onclick = e => showLessonsPop(e.currentTarget);
   const rb = $('#rubric-btn'); if (rb) rb.onclick = e => showRubricPop(e.currentTarget);
+  const cb = $('#claims-btn'); if (cb) cb.onclick = e => showClaimsPop(e.currentTarget);
+  const hb = $('#history-btn'); if (hb) hb.onclick = e => showHistoryPop(e.currentTarget);
   const cur = state.current, sec = all.find(x => x.title === cur), st = sec ? sectionStatus(cur, sec.words) : (cur === NOTES ? null : 'empty');
   const failing = cur && state.checks[cur] ? Object.values(state.checks[cur]).filter(v => v.status !== 'pass').length : 0;
   $('#dock-line').innerHTML = cur ? `<b>${esc(cur)}</b>${st ? ' · ' + STATUS_LABEL[st] : ''}${failing ? ` · ${failing} check${failing === 1 ? '' : 's'} to fix` : ''}` : '';
@@ -944,18 +970,29 @@ const panelReviewPrompt = () => {
   const who = (tpl().readers || ['Staff peer', 'Skeptical VP', 'Future maintainer']).slice(0, 3);
   return `Review the whole document as a panel of three independent reviewers: ${who.map(n => `${n} (${PERSONAS[n] || ''})`).join('; ')}. Give every note a persona attribute. Then score the rubric and give a verdict. Quote the exact words for every note.`;
 };
+const panelNames = () => (tpl().readers || ['Staff peer', 'Skeptical VP', 'Future maintainer']).slice(0, 3);
 const ACTIONS = {
   interview: [
     ['Interview me', s => `Interview me for the "${s}" section. Ask me one question at a time.`],
     ['Thesis', () => 'Give me the thesis for this document: the bottom line in at most 25 words, the ask, three supporting claims with facts, the strongest counterargument, and what would change your mind. If you cannot without inventing facts, say THESIS BLOCKED and ask me the questions.'],
+    ['Options table', () => 'Build the options table with me: ask me for the alternatives (including doing nothing), the criteria the reader cares about, and how each option scores, one question at a time. Then write the table.'],
+    ['TL;DR', () => `Write the TL;DR for this document${state.comments.some(c => c.resolved) ? ', and say what changed since the last review' : ''}.`],
+    ['Reshape dictation', s => `Reshape dictation: the text in the "${s}" section was dictated and is rough. Turn it into clean prose in my meaning and order.`],
     ['Sort my notes', () => 'Read my raw notes. Sort them into the template sections and write a draft for each section you have material for. Then tell me what is still missing.'],
-    ['What is missing?', () => 'Look at the whole document end to end. What important things am I missing? List them, most important first, then ask me about the first one.'],
   ],
   review: [
     ['Review this section', s => `Review the "${s}" section.`],
+    ['30-second read', () => 'Do the 30-second read of this document: title, first paragraph and headings only. What do you believe it asks for, and does that match the brief?'],
+    ['Claims', s => `List the claims in the "${s}" section with their sources.`],
     ['Fix English', s => `Only fix the English in the "${s}" section. Keep my meaning and my facts.`],
     ['Lint', () => 'Lint the whole document against the style rules.'],
     ['Check facts', s => `In the "${s}" section, list every claim or number a reviewer might doubt, as fact notes with the exact words quoted.`],
+    ['Learn from feedback', () => '__feedback__'],
+  ],
+  rehearse: [
+    ['Start the meeting', () => `Rehearse the review meeting. You are the panel: ${panelNames().map(n => `${n} (${PERSONAS[n] || ''})`).join('; ')}. Ask your first question, the hardest one.`],
+    ['Next question', () => 'Next question.'],
+    ['How did it go?', () => 'Give the panel verdict on how this meeting would go, and the top three things to fix before I share the document.'],
   ],
 };
 function renderCoachBar() {
@@ -964,7 +1001,7 @@ function renderCoachBar() {
   a.innerHTML = '';
   for (const [label, msg] of ACTIONS[state.mode]) {
     const b = el('button', { textContent: label, type: 'button', title: state.current });
-    b.onclick = () => send(msg(state.current), { label: `${label} · ${state.current}` });
+    b.onclick = () => { const m = msg(state.current); if (m === '__feedback__') return openFeedback(); send(m, { label: `${label} · ${state.current}` }); };
     a.append(b);
   }
 }
@@ -979,6 +1016,7 @@ function setFocus(on) {
 const TAG = /<(note|draft)\b([^>]*)>([\s\S]*?)<\/\1>/g;
 const KIND_LABEL = { english: 'English', missing: 'Missing', fact: 'Check this fact', question: 'A reviewer will ask', structure: 'Structure', draft: 'Draft' };
 const KIND_SHORT = { english: 'English', missing: 'Missing', fact: 'Fact', question: 'Question', structure: 'Structure', draft: 'Draft' };
+const STATUS_ORDER = { needs: 0, drafted: 1, empty: 2, ready: 3 };
 const plural = (n, k) => n === 1 || ['english', 'missing', 'structure'].includes(k) ? KIND_SHORT[k] : KIND_SHORT[k] + 's';
 const attrs = s => Object.fromEntries([...s.matchAll(/(\w+)="([^"]*)"/g)].map(m => [m[1], m[2].replace(/&quot;/g, '"')]));
 const inline = s => s.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/`([^`]+)`/g, '<code>$1</code>');
@@ -998,7 +1036,7 @@ function md(t) {
 }
 const kindOf = a => KIND_LABEL[a.type] && a.type !== 'draft' ? a.type : 'structure';
 // Text the thread shows: the reply minus its tags (they become comments).
-const prose = text => text.replace(TAG, '').replace(/<(check|score)\b[^>]*>[\s\S]*?<\/\1>/g, '').replace(/<verdict>[\s\S]*?<\/verdict>/g, '').replace(/<(note|draft|check|score|verdict)\b[\s\S]*$/, '').replace(/\n{3,}/g, '\n\n').trim();
+const prose = text => text.replace(TAG, '').replace(/<(check|score|claim|diagram)\b[^>]*>[\s\S]*?<\/\1>/g, '').replace(/<grade\b[^>]*value="(\d)"[^>]*>([\s\S]*?)<\/grade>/g, (m, v, why) => `**Answer graded ${v}/5.** ${why.trim()}`).replace(/<verdict>[\s\S]*?<\/verdict>/g, '').replace(/<(note|draft|check|score|verdict|claim|grade|diagram)\b[\s\S]*$/, '').replace(/\n{3,}/g, '\n\n').trim();
 function typing(label) {
   return el('div', { className: 'pending', innerHTML: `<span class="typing"><i></i><i></i><i></i></span>${esc(label)}` });
 }
@@ -1010,8 +1048,23 @@ function findSection(name) {
 /** Turn a finished reply into comments on the document. Returns how many were added. */
 const CHECK = /<check\b([^>]*)>([\s\S]*?)<\/check>/g;
 const SCORE = /<score\b([^>]*)>([\s\S]*?)<\/score>/g;
+const CLAIM = /<claim\b([^>]*)>([\s\S]*?)<\/claim>/g;
+const GRADE = /<grade\b([^>]*)>([\s\S]*?)<\/grade>/g;
+const DIAGRAM = /<diagram\b([^>]*)>([\s\S]*?)<\/diagram>/g;
 function ingest(reply, section) {
   let n = 0;
+  for (const m of reply.matchAll(CLAIM)) {
+    const a = attrs(m[1]), quote = a.quote || '', source = (a.source || 'unsupported').trim();
+    const c = { id: uid(), quote, source, body: m[2].trim(), section, at: Date.now() };
+    state.claims = state.claims.filter(x => x.quote !== quote); state.claims.push(c);
+    if (/^unsupported/i.test(source) && quote) {
+      const note = { id: c.id, kind: 'fact', quote, fix: '', rule: '', persona: '', severity: 'medium', section, body: c.body || 'No source in the brief, the attachments or the document.', resolved: false, at: Date.now() };
+      note.anchored = !!doc.annotate(note.id, 'fact', quote, section);
+      if (note.anchored) { state.comments.push(note); n++; }
+    }
+  }
+  for (const m of reply.matchAll(GRADE)) { const v = Number(attrs(m[1]).value); if (v >= 1 && v <= 5) state.grades.push({ value: v, why: m[2].trim(), at: Date.now() }); }
+  for (const m of reply.matchAll(DIAGRAM)) { try { pendingDiagrams.push({ title: attrs(m[1]).title || '', spec: JSON.parse(m[2].trim()) }); } catch (e) { console.warn('bad diagram spec', e); } }
   const scores = {};
   for (const m of reply.matchAll(SCORE)) { const a = attrs(m[1]), dim = (a.dimension || '').trim().toLowerCase(), v = Number(a.value); if (RUBRIC.includes(dim) && v >= 1 && v <= 5) scores[dim] = { value: v, note: m[2].trim() }; }
   const verdict = (reply.match(/<verdict>\s*(SHIP|REVISE)\s*<\/verdict>/i) || [])[1];
@@ -1037,8 +1090,23 @@ function ingest(reply, section) {
   state.docJson = doc.json();
   return n;
 }
+function advanceAfter(section) {
+  const all = sections().map(x => ({ title: x.title, status: sectionStatus(x.title, x.words) }));
+  for (const t of tpl().sections) if (!all.some(x => x.title.toLowerCase() === t.title.toLowerCase())) all.push({ title: t.title, status: 'empty' });
+  const here = all.find(x => x.title === section);
+  if (!here || here.status !== 'ready') return;
+  const next = all.filter(x => x.title !== section && x.status !== 'ready').sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status])[0];
+  state.chat.push({ role: 'assistant', content: '', done: true, ui: true, advance: { from: section, to: next ? next.title : null, status: next ? next.status : null } });
+  renderLog();
+}
 function fillMsg(d, m) {
   if (m.role === 'user') { d.textContent = m.label || m.content; return; }
+  if (m.advance) {
+    const a = m.advance, line = el('div', { className: 'advance' });
+    line.innerHTML = `<b>${esc(a.from)}</b> passes every check.` + (a.to ? ` Weakest next: <b>${esc(a.to)}</b> (${esc(STATUS_LABEL[a.status] || '').toLowerCase()}).` : ' Every section is ready. Run the panel review.');
+    if (a.to) { const go = el('button', { type: 'button', className: 'added', textContent: (a.status === 'empty' ? 'Interview me for ' : 'Coach ') + a.to + ' →' }); go.onclick = () => { setCurrent(a.to); if (a.status === 'empty') { if (!sections().some(x => x.title === a.to)) addSection(a.to); setMode('interview'); send(ACTIONS.interview[0][1](a.to), { label: 'Interview me · ' + a.to }); } else { setMode('review'); send(ACTIONS.review[0][1](a.to), { label: 'Review this section · ' + a.to }); } }; line.append(go); }
+    d.replaceChildren(line); return;
+  }
   const nodes = [];
   if (m.verify) {
     nodes.push(el('div', { className: 'verify', textContent: m.done ? `Checked quotes against the text: ${m.added} fixed${m.unfound ? `, ${m.unfound} dropped` : ''}.` : 'Checking quotes against the text…' }));
@@ -1134,13 +1202,63 @@ function showRubricPop(anchor) {
   pop.style.left = Math.max(8, Math.min(r.left, innerWidth - w - 8)) + 'px';
   pop.style.top = Math.max(8, r.top - h - 8) + 'px';
 }
+function placePop(pop, anchor) {
+  pop.hidden = false;
+  const r = anchor.getBoundingClientRect(), w = pop.offsetWidth, h = pop.offsetHeight;
+  pop.style.left = Math.max(8, Math.min(r.left, innerWidth - w - 8)) + 'px';
+  pop.style.top = Math.max(8, r.top - h - 8) + 'px';
+}
+function showClaimsPop(anchor) {
+  const pop = $('#pop'); clearTimeout(popTimer); popId = 'claims';
+  pop.className = 'pop rubric'; pop.replaceChildren();
+  const head = el('div', { className: 'card-head' }); head.append(el('b', { textContent: 'Claim ledger' })); pop.append(head);
+  const t = el('div', { className: 'ledger' });
+  for (const c of state.claims) { const row = el('div', { className: 'lrow ' + (/^unsupported/i.test(c.source) ? 'bad' : '') }); row.append(el('span', { className: 'q', textContent: '“' + c.quote + '”' }), el('small', { textContent: c.source })); row.onclick = () => { const n = state.comments.find(x => x.id === c.id); if (n) activate(n.id, true); }; t.append(row); }
+  pop.append(t, el('p', { className: 'note', style: 'margin:8px 0 0;font-size:12px;color:var(--faint)', textContent: 'Unsupported claims are underlined in the text. Give them a source, or mark them as assumptions.' }));
+  placePop(pop, anchor);
+}
+async function showHistoryPop(anchor) {
+  const pop = $('#pop'); clearTimeout(popTimer); popId = 'history';
+  pop.className = 'pop rubric'; pop.replaceChildren();
+  const head = el('div', { className: 'card-head' }); head.append(el('b', { textContent: 'Review rounds' })); pop.append(head);
+  pop.append(el('p', { className: 'note', style: 'margin:0 0 6px;font-size:12px;color:var(--muted)', textContent: `English notes per review: ${state.reviewStats.map(r => r.english).join(' → ')}` + (state.reviewStats.some(r => r.avg) ? ` · rubric ${state.reviewStats.filter(r => r.avg).map(r => r.avg.toFixed(1)).join(' → ')}` : '') }));
+  let list = []; try { list = await store.history.list(state.id); } catch {}
+  const t = el('div', { className: 'ledger' });
+  if (!list.length) t.append(el('div', { className: 'lessons-empty', textContent: 'No snapshots yet. One is taken after every review.' }));
+  for (const h of list) { const row = el('div', { className: 'lrow' }); row.append(el('span', { className: 'q', textContent: h.name.replace(/^\d+-/, '').replace(/\.md$/, '') }), el('small', { textContent: ago(h.updated) })); row.onclick = async () => { hidePop(); showDiff(await store.history.read(state.id, h.name), h.name); }; t.append(row); }
+  pop.append(t);
+  placePop(pop, anchor);
+}
+// Line diff (LCS) of a snapshot against the current Markdown.
+function diffLines(a, b) {
+  const A = a.split('\n'), B = b.split('\n'), n = A.length, m = B.length;
+  const L = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i][j] = A[i] === B[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+  const out = []; let i = 0, j = 0;
+  while (i < n && j < m) { if (A[i] === B[j]) { out.push([' ', A[i]]); i++; j++; } else if (L[i + 1][j] >= L[i][j + 1]) { out.push(['-', A[i]]); i++; } else { out.push(['+', B[j]]); j++; } }
+  while (i < n) out.push(['-', A[i++]]); while (j < m) out.push(['+', B[j++]]);
+  return out;
+}
+function showDiff(oldMd, name) {
+  const m = $('#import'); m.replaceChildren();
+  const box = el('div', { className: 'box wide' });
+  box.append(el('h2', { textContent: 'What changed since ' + name.replace(/^\d+-/, '').replace(/\.md$/, '') }));
+  const pre = el('pre', { className: 'diff' });
+  const strip = md => md.replace(/!\[[^\]]*\]\([^)]*\)/g, '[image]');
+  const rows = diffLines(strip(oldMd), strip(toMarkdown()));
+  const changed = rows.filter(r => r[0] !== ' ').length;
+  for (const [k, line] of rows) { if (k === ' ' && !line.trim()) continue; pre.append(el('div', { className: k === '+' ? 'add' : k === '-' ? 'del' : 'same', textContent: (k === ' ' ? '  ' : k + ' ') + line })); }
+  box.append(el('p', { className: 'note', textContent: changed ? `${changed} lines changed.` : 'No changes since this round.' }), pre);
+  const foot = el('div', { className: 'foot' }); const close = el('button', { type: 'button', className: 'btn', textContent: 'Close' }); close.onclick = () => { m.hidden = true; }; foot.append(close); box.append(foot);
+  m.append(box); m.hidden = false;
+}
 function showLessonsPop(anchor) {
   const pop = $('#pop'); clearTimeout(popTimer); popId = 'lessons';
   pop.className = 'pop lessons'; pop.replaceChildren();
   const head = el('div', { className: 'card-head' }); head.append(el('b', { textContent: 'Lessons' })); pop.append(head);
   const rules = Object.entries(lessonsByRule()).sort((a, b) => b[1].n - a[1].n).slice(0, 8);
   if (!rules.length) pop.append(el('div', { className: 'lessons-empty', textContent: 'The English rules you keep hitting will collect here after a review, so you can see what to practise.' }));
-  else { const list = el('div', { className: 'lesson-list' }); for (const [rule, r] of rules) { const d = el('div', { className: 'lesson' }); d.append(el('b', { textContent: r.n + '×' }), el('span', { className: 'r', textContent: rule }), el('small', { textContent: r.body })); list.append(d); } pop.append(list); }
+  else { const list = el('div', { className: 'lesson-list' }); for (const [rule, r] of rules) { const d = el('div', { className: 'lesson' }); const teach = el('button', { type: 'button', className: 'teach', textContent: 'Teach me' }); teach.onclick = () => { hidePop(); setMode('review'); send(`Teach me the rule "${rule}" in three short sentences, then give me one exercise sentence with the mistake and the corrected version.`, { label: 'Teach me · ' + rule }); }; d.append(el('b', { textContent: r.n + '×' }), el('span', { className: 'r', textContent: rule }), el('small', { textContent: r.body }), teach); list.append(d); } pop.append(list); if (state.reviewStats.length > 1) pop.append(el('p', { className: 'note', style: 'margin:8px 0 0;font-size:12px;color:var(--muted)', textContent: 'English notes per review: ' + state.reviewStats.map(r => r.english).join(' → ') })); }
   pop.hidden = false;
   const r = anchor.getBoundingClientRect(), w = pop.offsetWidth, h = pop.offsetHeight;
   pop.style.left = Math.max(8, Math.min(r.right - w, innerWidth - w - 8)) + 'px';
@@ -1190,7 +1308,7 @@ document.addEventListener('mouseover', e => {
   clearTimeout(popTimer); popTimer = setTimeout(hidePop, 300);
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') hidePop(); });
-document.addEventListener('mousedown', e => { if (!e.target.closest('#pop') && !e.target.closest('.hbadge') && !e.target.closest('mark[data-comment]') && !e.target.closest('#lessons-btn') && !e.target.closest('#rubric-btn')) hidePop(); });
+document.addEventListener('mousedown', e => { if (!e.target.closest('#pop') && !e.target.closest('.hbadge') && !e.target.closest('mark[data-comment]') && !e.target.closest('#lessons-btn') && !e.target.closest('#rubric-btn') && !e.target.closest('#claims-btn') && !e.target.closest('#history-btn')) hidePop(); });
 $('#scroll').addEventListener('scroll', hidePop, { passive: true });
 function toggleResolved(c) {
   c.resolved = !c.resolved;
@@ -1202,6 +1320,7 @@ function toggleResolved(c) {
 }
 const sectionText = t => t === NOTES ? state.notes : doc.sectionMarkdown(t);
 function putText(t, text, how) {
+  if (t !== NOTES && !sections().some(x => x.title.toLowerCase() === t.toLowerCase())) doc.addSectionAt(t, /^(tl;dr|summary|abstract)$/i.test(t.trim()) ? 'start' : 'end');
   if (t !== NOTES) return doc.setSection(t, text, how);
   state.notes = how === 'replace' || !state.notes.trim() ? text : state.notes.trimEnd() + '\n\n' + text;
   notesBox().value = state.notes; grow(notesBox()); save();
@@ -1221,7 +1340,8 @@ function payload() {
     attachments: state.attachments.map(a => a.kind === 'image' ? { name: a.name, kind: 'image', mime: a.mime, data: images[a.id] || '' } : { name: a.name, kind: a.kind, text: a.text || '' }).filter(a => a.kind !== 'image' || a.data),
     template: { name: tpl().name, sections: tpl().sections },
     sections: sections().map(({ title, text }) => ({ title, text })),
-    history: state.chat.slice(0, -1).map(({ role, content }) => ({ role, content })),
+    history: state.chat.slice(0, -1).filter(m => !m.ui).map(({ role, content }) => ({ role, content })),
+    feedback: feedbackText || '',
   };
 }
 function setBusy(on) { busy = on; $('#send').disabled = on; $('#review-all').disabled = on; $('#coach').classList.toggle('busy', on); doc.refreshCoach(); }
@@ -1257,6 +1377,17 @@ async function send(text, opts = {}) {
   setBusy(false);
   save(); renderComments();
   if (m.added) showView('doc');
+  if (opts.feedback && m.done) {
+    const weights = (m.content.match(/^Weight:.*$/gm) || []).map(x => x.trim());
+    if (weights.length) { try { const cur = (await store.feedback.get()) || ''; const next = (cur.trim() + '\n\n' + new Date().toISOString().slice(0, 10) + ' · ' + (state.title || 'Untitled') + '\n' + weights.join('\n')).trim(); await store.feedback.set(next); feedbackText = next; } catch (e) { console.warn(e); } }
+  }
+  if (!opts.hidden && m.added) {
+    const english = state.comments.slice(before).filter(c => c.kind === 'english').length;
+    state.reviewStats.push({ at: Date.now(), english, notes: m.added, avg: state.rubric && state.rubric.at > Date.now() - 60000 ? rubricAvg() : null });
+    try { await store.history.snapshot(state.id, toMarkdown(), (state.rubric && state.rubric.at > Date.now() - 60000 ? 'rubric-' + rubricAvg().toFixed(1) : 'review')); } catch (e) { console.warn(e); }
+    advanceAfter(section);
+  }
+  if (pendingDiagrams.length) { const list = pendingDiagrams.splice(0); for (const d of list) await placeDiagram(d, opts.drawAt); }
   if (unfound.length && !opts.hidden) {
     state.comments = state.comments.filter(c => !unfound.includes(c));
     const list = unfound.map(c => `- [${c.kind}] quote="${c.quote.replace(/"/g, "'")}" — ${c.body.slice(0, 160)}`).join('\n');
@@ -1273,6 +1404,16 @@ async function mockCoach(text, emit) {
     ? `Let us start with the "${sec}" section.\n\nWhen this is done, what will be true that is not true today? One sentence is enough. For example: "No single client can slow down the others."`
     : w.length < 4
       ? `The "${sec}" section is empty, so there is nothing to review yet. Write two or three sentences and I will go through them.\n\n<note type="missing">${hintFor(sec) || 'What should a reader learn from this section?'}</note>`
+      : /^Draw this/.test(text)
+        ? `Here is the flow as the text describes it.\n\n<diagram title="Clients hit the limiter before the API">{"nodes":[{"id":"c","label":"Clients"},{"id":"l","label":"Rate limiter (Redis)"},{"id":"a","label":"Payments API"}],"edges":[{"from":"c","to":"l","label":"requests"},{"from":"l","to":"a","label":"allowed"}]}</diagram>`
+      : /claims in the/.test(text)
+        ? `<claim quote="${q1}" source="unsupported">Which clients, and what share of traffic? A dashboard link would settle it.</claim>\n<claim quote="${q2}" source="brief">Matches the known numbers in the brief.</claim>`
+      : /Rehearse the review meeting/.test(text)
+        ? `**Skeptical VP:** What do I lose if I say no for a quarter? Give me a number.`
+      : /^Next question\.$/.test(text) || /quarter/.test(text)
+        ? `<grade value="3">You named the cost but not its size.</grade>\n\n**Staff peer:** Why not per-client quotas at the load balancer, which already exists?`
+      : /30-second read/.test(text)
+        ? `From the title, first paragraph and headings alone, this document asks for approval to build a rate limiter, from the platform team lead. The brief asks for the same, so a skimming reader gets it right. One gap: the cost is not visible in the first screen.`
       : /as a panel/.test(text)
         ? `Panel verdict first: the ask is clear, the evidence is thin.\n\n<note type="question" severity="high" persona="Skeptical VP">What do I lose if I say no for a quarter?</note>\n\n<note type="missing" severity="medium" persona="Staff peer" quote="${q2}">Why not the simpler option: per-client quotas at the load balancer?</note>\n\n<note type="question" severity="medium" persona="On-call SRE">What wakes me up at 3 a.m., and how do I undo it?</note>\n\n${RUBRIC.map((d, k) => `<score dimension="${d}" value="${[4, 2, 3, 3, 4, 4, 3, 2][k]}">${['Ask is in the first lines.', 'Adjectives where numbers should be.', 'Do-nothing is missing.', 'Risks are named, mitigation is thin.', 'Right vocabulary for the reader.', 'Headings argue.', 'Some restatement.', 'No owner or date.'][k]}</score>`).join('\n')}\n<verdict>REVISE</verdict>\n\nNext: add the do-nothing option with its cost.`
       : /quoted words that are not in the document/.test(text)
@@ -1420,6 +1561,19 @@ function newWorkspace() {
   foot.append(err, cancel, ok); box.append(l1, l2, foot); m.append(box); m.hidden = false; name.focus();
 }
 
+/* ---------- real reviewer feedback ---------- */
+function openFeedback() {
+  const m = $('#import'); m.replaceChildren();
+  const box = el('div', { className: 'box' });
+  box.append(el('h2', { textContent: 'Learn from real feedback' }), el('p', { className: 'note', textContent: 'Paste the comments reviewers actually gave on this document. The coach compares them with its own notes and writes calibration lines into the workspace (feedback.md) so future panels weight what your reviewers care about.' }));
+  const ta = el('textarea', { rows: 8, placeholder: 'Paste reviewer comments here…', style: 'background:var(--canvas);border:1px solid var(--line-strong);border-radius:8px;color:var(--ink);font:13px/1.5 var(--ui);padding:10px;outline:none;resize:vertical' });
+  const foot = el('div', { className: 'foot' }); const err = el('span', { className: 'err' });
+  const cancel = el('button', { type: 'button', className: 'btn', textContent: 'Cancel' }); cancel.onclick = () => { m.hidden = true; };
+  const go = el('button', { type: 'button', className: 'btn primary', textContent: 'Compare and learn' });
+  go.onclick = () => { if (!ta.value.trim()) { err.textContent = 'Paste the comments first.'; return; } m.hidden = true; setMode('review'); send(`Learn from feedback. These are the real reviewer comments I received on this document:\n\n${ta.value.trim()}`, { label: 'Learn from real feedback', feedback: true }); };
+  foot.append(err, cancel, go); box.append(ta, foot); m.append(box); m.hidden = false; ta.focus();
+}
+
 /* ---------- settings ---------- */
 const MODELS = ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-fable-5-1'];
 async function renderSettings() {
@@ -1475,6 +1629,11 @@ async function renderSettings() {
   const resetStyle = el('button', { type: 'button', className: 'btn', textContent: 'Fill with the built-in rules' }); resetStyle.onclick = () => { styleBox.value = DEFAULT_STYLE; };
   st.append(styleBox, resetStyle);
   box.append(st);
+  const fb = el('section', { className: 'set-sec' });
+  fb.append(el('h2', { textContent: 'Reviewer feedback' }), el('p', { className: 'note', textContent: 'What your real reviewers cared about, collected by “Learn from feedback” (feedback.md in the workspace). Edit freely; the panels read it.' }));
+  const fbBox = el('textarea', { rows: 8, style: 'background:var(--canvas);border:1px solid var(--line-strong);border-radius:8px;color:var(--ink);font:12.5px/1.5 var(--mono);padding:10px;outline:none;resize:vertical' });
+  try { fbBox.value = (await store.feedback.get()) || ''; } catch {}
+  fb.append(fbBox); box.append(fb);
 
   const foot = el('div', { className: 'set-foot' });
   const saveBtn = el('button', { type: 'button', className: 'btn primary', textContent: 'Save settings' });
@@ -1484,6 +1643,7 @@ async function renderSettings() {
     try {
       await store.settings.set({ agent: agent.value, command: cmd.value.trim(), args: args.value.trim(), model: model.value.trim(), effort: effort.value, skills: skills.value.split(',').map(x => x.trim()).filter(Boolean), useMySettings: mine.checked });
       await store.style.set(styleBox.value); styleRules = styleBox.value;
+      await store.feedback.set(fbBox.value); feedbackText = fbBox.value;
       msg.textContent = 'Saved. The next coach request uses these settings.';
     } catch (e) { err.textContent = String(e); }
   };
@@ -1592,10 +1752,50 @@ function openImport() {
   box.append(body, lt, foot); m.append(box); m.hidden = false;
 }
 $('#import').addEventListener('mousedown', e => { if (e.target === $('#import')) $('#import').hidden = true; });
+// HTML for Confluence: the text without the coach's marks; images and diagrams stay in Margin.
+function publishHTML() {
+  const d = document.createElement('div'); d.innerHTML = doc.html();
+  d.querySelectorAll('mark').forEach(m => m.replaceWith(...m.childNodes));
+  d.querySelectorAll('img').forEach(i => { const p = document.createElement('p'); p.innerHTML = '<em>[' + (i.hasAttribute('data-scene') ? 'diagram' : 'image') + ' in Margin]</em>'; i.replaceWith(p); });
+  d.querySelectorAll('*').forEach(e => { for (const a of [...e.attributes]) if (/^data-|^class$|^style$|^contenteditable$/.test(a.name)) e.removeAttribute(a.name); });
+  d.querySelectorAll('input').forEach(i => i.remove());
+  return d.innerHTML;
+}
+function openPublish() {
+  $('#export').open = false;
+  const m = $('#import'); m.replaceChildren();
+  const box = el('div', { className: 'box' });
+  const existing = state.publish && state.publish.id;
+  box.append(el('h2', { textContent: existing ? 'Update the Confluence page' : 'Publish to Confluence' }));
+  const parent = el('input', { type: 'text', value: (state.publish && state.publish.parentUrl) || '', placeholder: 'https://your-site.atlassian.net/wiki/spaces/ENG/pages/123456/Parent-page' });
+  const title = el('input', { type: 'text', value: state.title || 'Untitled' });
+  const email = el('input', { type: 'email', value: localStorage.getItem('docu-coach-atlassian-email') || '' });
+  const token = el('input', { type: 'password', value: localStorage.getItem('docu-coach-atlassian-token') || '', placeholder: 'Atlassian API token' });
+  const lp = el('label', { textContent: existing ? 'Parent page link (kept)' : 'Parent page link (the new page goes under it)' }); lp.append(parent);
+  const lt = el('label', { textContent: 'Page title' }); lt.append(title);
+  const le = el('label', { textContent: 'Atlassian email' }); le.append(email); const lk = el('label', { textContent: 'API token' }); lk.append(token);
+  const note = el('p', { className: 'note', textContent: 'Sends the text, headings, lists, tables and code. Diagrams and images stay in Margin (a placeholder marks them). Comments are not sent.' });
+  const foot = el('div', { className: 'foot' }); const err = el('span', { className: 'err' });
+  const cancel = el('button', { type: 'button', className: 'btn', textContent: 'Cancel' }); cancel.onclick = () => { m.hidden = true; };
+  const go = el('button', { type: 'button', className: 'btn primary', textContent: existing ? 'Update page' : 'Publish' });
+  go.onclick = async () => {
+    err.textContent = ''; go.disabled = true;
+    try {
+      if (!parent.value.trim() || !email.value.trim() || !token.value.trim()) throw new Error('Fill in the link, the email and the token.');
+      const r = await store.publish(parent.value.trim(), title.value.trim() || 'Untitled', publishHTML(), email.value.trim(), token.value.trim(), existing ? state.publish.id : null);
+      state.publish = { id: r.id, url: r.url, parentUrl: parent.value.trim(), at: Date.now() }; save();
+      box.replaceChildren(el('h2', { textContent: 'Published' }), el('p', { className: 'note', innerHTML: `The page is at <a href="${esc(r.url)}" target="_blank" style="color:var(--accent-ink)">${esc(r.url)}</a>. Publish again to update it.` }), foot);
+      foot.replaceChildren(cancel); cancel.textContent = 'Close';
+    } catch (e) { err.textContent = String(e.message || e); go.disabled = false; }
+  };
+  foot.append(err, cancel, go); box.append(lp, lt, le, lk, note, foot); m.append(box); m.hidden = false;
+}
+$('#publish-btn').onclick = openPublish;
 $('#home').onclick = () => showView('library');
 $('#ws-crumb').onclick = () => showView('library');
 store.ws.info().then(i => { $('#ws-crumb').textContent = i.name; }).catch(() => {});
 store.style.get().then(t => { styleRules = t || ''; }).catch(() => {});
+store.feedback.get().then(t => { feedbackText = t || ''; }).catch(() => {});
 
 /* ---------- images and diagrams ---------- */
 let diagramReady = null;
@@ -1627,6 +1827,35 @@ async function addImage(f, pos) {
   let file = null;
   try { if (inApp) file = await store.asset(state.id, `${Date.now()}-${f.name || 'image.png'}`, data); } catch (e) { console.error(e); }
   doc.insertImage({ src: `data:${f.type};base64,${data}`, file, alt: (f.name || 'image').replace(/\.[^.]+$/, '') }, pos);
+  save();
+}
+
+/* ---------- diagrams from the coach's spec ---------- */
+const pendingDiagrams = [];
+// ponytail: layered left-to-right layout, no edge routing; good enough for <=12 boxes.
+function layout(spec) {
+  const nodes = (spec.nodes || []).slice(0, 12).map(n => ({ id: String(n.id), label: String(n.label || n.id) }));
+  const edges = (spec.edges || []).map(e => ({ from: String(e.from), to: String(e.to), label: e.label })).filter(e => nodes.some(n => n.id === e.from) && nodes.some(n => n.id === e.to));
+  const depth = {}; nodes.forEach(n => { depth[n.id] = 0; });
+  for (let pass = 0; pass < nodes.length; pass++) for (const e of edges) { const d = depth[e.from] + 1; if (d > depth[e.to] && d < nodes.length) depth[e.to] = d; }
+  const cols = {}; nodes.forEach(n => { (cols[depth[n.id]] ||= []).push(n); });
+  const W = 220, H = 80, GX = 110, GY = 40, pos = {};
+  Object.entries(cols).forEach(([c, list]) => list.forEach((n, r) => { pos[n.id] = { x: 40 + Number(c) * (W + GX), y: 40 + r * (H + GY) }; }));
+  const els = nodes.map(n => ({ type: 'rectangle', id: 'n-' + n.id, x: pos[n.id].x, y: pos[n.id].y, width: W, height: H, label: { text: n.label } }));
+  for (const e of edges) {
+    const a = pos[e.from], b = pos[e.to], back = b.x <= a.x;
+    const x = back ? a.x + W / 2 : a.x + W, y = back ? a.y + H : a.y + H / 2;
+    els.push({ type: 'arrow', x, y, width: (back ? b.x + W / 2 : b.x) - x, height: (back ? b.y : b.y + H / 2) - y, start: { id: 'n-' + e.from }, end: { id: 'n-' + e.to }, ...(e.label ? { label: { text: String(e.label) } } : {}) });
+  }
+  return els;
+}
+async function placeDiagram(d, at) {
+  try { await loadDiagram(); } catch (e) { console.warn(e); return; }
+  const r = await window.Diagram.render(window.Diagram.elements(layout(d.spec)));
+  let file = null;
+  try { if (inApp) file = await store.asset(state.id, `diagram-${Date.now()}.svg`, btoa(unescape(encodeURIComponent(r.svg)))); } catch {}
+  if (at != null) doc.editor.commands.setTextSelection(Math.min(at, doc.editor.state.doc.content.size));
+  doc.insertDiagram(r.svg, r.scene, file);
   save();
 }
 

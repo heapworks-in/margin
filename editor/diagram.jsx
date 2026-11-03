@@ -39,6 +39,11 @@ window.Diagram = {
   _api: null,
   library: [],
   onLibrary: null,
+  /** SVG + scene for elements built with Diagram.elements(), without opening the editor. */
+  async render(elements) {
+    const svg = await exportToSvg({ elements, appState: { exportBackground: false, exportWithDarkMode: true, exportEmbedScene: false, viewBackgroundColor: '#0E1117' }, files: {} })
+    return { svg: svg.outerHTML, scene: serializeAsJSON(elements, {}, {}, 'local') }
+  },
   elements: convertToExcalidrawElements,
   open(scene) {
     return new Promise(resolve => {
