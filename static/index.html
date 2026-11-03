@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Margin</title>
 <link href="vendor/fonts/fonts.css" rel="stylesheet">
-<script src="vendor/editor.js?v=38"></script>
+<script src="vendor/editor.js?v=39"></script>
 <style>
 :root{
   color-scheme:dark;
@@ -357,6 +357,12 @@ mark.c-mark.active{box-shadow:0 0 0 2px var(--accent-soft);filter:saturate(1.4)}
 .aud input{border:0;border-bottom:1px dashed var(--line-strong);background:none;color:var(--ink);font:inherit;padding:1px 2px;min-width:190px;outline:none}
 .aud input:focus{border-bottom-color:var(--accent)}
 .aud input::placeholder{color:var(--faint)}
+.agents{display:flex;flex-direction:column;gap:6px}
+.agent{display:grid;grid-template-columns:auto auto 1fr;gap:4px 10px;align-items:baseline;padding:8px 10px;border:1px solid var(--line);border-radius:8px;cursor:pointer}
+.agent:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
+.agent.missing{opacity:.55;cursor:default}
+.agent .n{color:var(--ink);font-weight:600}
+.agent small{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .brief-toggle{background:none;border:0;color:var(--accent-ink);font:inherit;font-size:12.5px;padding:0;cursor:pointer}
 .brief{display:grid;grid-template-columns:1fr 1fr;gap:6px 18px;margin:-10px 0 22px;font-size:13px;color:var(--muted)}
 .brief[hidden]{display:none}
@@ -712,6 +718,7 @@ const store = inApp ? {
   diagrams: { list: () => invoke('diagrams_list'), save: (name, svg, scene) => invoke('diagram_save', { name, svg, scene }), load: name => invoke('diagram_load', { name }), remove: name => invoke('diagram_delete', { name }) },
   library: { load: () => invoke('library_load').then(JSON.parse), save: items => invoke('library_save', { json: JSON.stringify(items) }) },
   settings: { get: () => invoke('settings_get'), set: value => invoke('settings_set', { value }) },
+  agents: () => invoke('agents_discover'),
   style: { get: () => invoke('style_get'), set: text => invoke('style_set', { text }) },
   feedback: { get: () => invoke('feedback_get'), set: text => invoke('feedback_set', { text }) },
   history: { snapshot: (id, markdown, label) => invoke('doc_snapshot', { id, markdown, label }), list: id => invoke('history_list', { id }), read: (id, name) => invoke('history_read', { id, name }) },
@@ -735,6 +742,7 @@ const store = inApp ? {
   feedback: { get: async () => localStorage.getItem('docu-coach-feedback') || '', set: async text => localStorage.setItem('docu-coach-feedback', text) },
   history: { _k: id => 'docu-coach-history:' + id, snapshot: async function (id, markdown, label) { const l = JSON.parse(localStorage.getItem(this._k(id)) || '[]'); const name = `${Date.now()}-${label}.md`; l.unshift({ name, markdown, updated: Date.now(), size: markdown.length }); localStorage.setItem(this._k(id), JSON.stringify(l.slice(0, 20))); return name; }, list: async function (id) { return JSON.parse(localStorage.getItem(this._k(id)) || '[]').map(({ name, updated, size }) => ({ name, updated, size })); }, read: async function (id, name) { return (JSON.parse(localStorage.getItem(this._k(id)) || '[]').find(h => h.name === name) || {}).markdown || ''; } },
   publish: async () => { throw new Error('Publishing works in the app.'); },
+  agents: async () => [{ id: 'claude', name: 'Claude Code (bundled)', path: 'bundled with Margin; uses your Claude login', found: true }, { id: 'devin', name: 'Devin', path: '`devin` is not on your PATH', found: false }, { id: 'custom', name: 'Custom ACP agent command', path: '', found: true }],
   settings: { get: async () => ({ agent: 'claude', command: '', args: '', model: 'claude-opus-5-5', effort: 'medium', skills: [], useMySettings: false, ...JSON.parse(localStorage.getItem('docu-coach-settings') || '{}') }), set: async function (v) { const cur = await this.get(); const next = { ...cur, ...v }; localStorage.setItem('docu-coach-settings', JSON.stringify(next)); return next; } },
   confluence: async () => { throw new Error('Confluence import works in the app.'); },
 };
@@ -1594,14 +1602,23 @@ async function renderSettings() {
 
   // Agent
   const a = el('section', { className: 'set-sec' });
-  a.append(el('h2', { textContent: 'Coach agent (ACP)' }), el('p', { className: 'note', textContent: 'The coach talks to an agent over the Agent Client Protocol. Claude Code is bundled and uses your Claude login. Any other ACP agent (Codex, Gemini CLI, Devin when Cognition ships an ACP agent) can be used by giving its command.' }));
-  const agent = el('select'); agent.append(el('option', { value: 'claude', textContent: 'Claude Code (bundled)' }), el('option', { value: 'custom', textContent: 'Custom ACP agent command' })); agent.value = cfg.agent || 'claude';
-  const al = el('label', { textContent: 'Agent' }); al.append(agent);
-  const cmd = el('input', { type: 'text', value: cfg.command || '', placeholder: '/usr/local/bin/codex-acp  or  /path/to/devin-acp' });
+  a.append(el('h2', { textContent: 'Coach agent (ACP)' }), el('p', { className: 'note', textContent: 'The coach talks to an agent over the Agent Client Protocol. Claude Code is bundled and uses your Claude login. Other agents are found on your PATH at startup: nothing to configure. Pick one.' }));
+  let agents = []; try { agents = await store.agents(); } catch {}
+  const agent = { value: cfg.agent || 'claude' };
+  const list = el('div', { className: 'agents' });
+  for (const ag of agents) {
+    const row = el('label', { className: 'agent' + (ag.found ? '' : ' missing') });
+    const r = el('input', { type: 'radio', name: 'agent', value: ag.id, checked: agent.value === ag.id, disabled: !ag.found });
+    r.onchange = () => { agent.value = ag.id; syncAgent(); };
+    row.append(r, el('span', { className: 'n', textContent: ag.name }), el('small', { textContent: ag.path }));
+    list.append(row);
+  }
+  const cmd = el('input', { type: 'text', value: cfg.command || '', placeholder: '/usr/local/bin/some-acp-agent' });
   const args = el('input', { type: 'text', value: cfg.args || '', placeholder: 'extra arguments, separated by spaces' });
   const cl = el('label', { textContent: 'Command' }); cl.append(cmd); const argl = el('label', { textContent: 'Arguments' }); argl.append(args);
   const custom = el('div', { style: 'display:flex;flex-direction:column;gap:12px' }); custom.append(cl, argl, el('p', { className: 'note', textContent: 'Examples: npx -y @agentclientprotocol/codex-acp (command: npx, arguments: -y @agentclientprotocol/codex-acp). The agent must speak ACP over stdio.' }));
-  const syncAgent = () => { custom.hidden = agent.value !== 'custom'; }; agent.onchange = syncAgent; syncAgent();
+  const syncAgent = () => { custom.style.display = agent.value === 'custom' ? 'flex' : 'none'; }; syncAgent();
+  const al = list;
   a.append(al, custom);
   box.append(a);
 

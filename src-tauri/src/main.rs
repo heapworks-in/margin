@@ -12,18 +12,51 @@ use tauri::{ipc::Channel, AppHandle, Manager};
 struct Coach(Mutex<Option<(Arc<acp::Acp>, String)>>);
 
 /// Apps opened from Finder do not get your shell PATH (nvm, Homebrew), so ask the login shell.
-fn find_node() -> PathBuf {
-    if let Ok(p) = std::env::var("DOCU_COACH_NODE") {
-        return p.into();
-    }
+/// Resolve binaries the way the user's terminal would: through the login shell's PATH.
+fn which_all(names: &[&str]) -> std::collections::HashMap<String, PathBuf> {
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
-    if let Ok(out) = Command::new(shell).args(["-ilc", "command -v node"]).stdin(Stdio::null()).stderr(Stdio::null()).output() {
-        let text = String::from_utf8_lossy(&out.stdout);
-        if let Some(p) = text.lines().rev().map(str::trim).find(|l| l.starts_with('/')) {
-            return p.into();
+    let script = names.iter().map(|n| format!("printf '%s=%s\\n' '{n}' \"$(command -v '{n}' 2>/dev/null)\"")).collect::<Vec<_>>().join("; ");
+    let mut found = std::collections::HashMap::new();
+    if let Ok(out) = Command::new(shell).args(["-ilc", &script]).stdin(Stdio::null()).stderr(Stdio::null()).output() {
+        for line in String::from_utf8_lossy(&out.stdout).lines() {
+            if let Some((n, p)) = line.split_once('=') {
+                if p.starts_with('/') { found.insert(n.to_string(), PathBuf::from(p.trim())); }
+            }
         }
     }
-    ["/opt/homebrew/bin/node", "/usr/local/bin/node"].iter().map(PathBuf::from).find(|p| p.exists()).unwrap_or_else(|| "node".into())
+    found
+}
+fn which(name: &str) -> Option<PathBuf> {
+    which_all(&[name]).remove(name).or_else(|| {
+        let home = std::env::var("HOME").unwrap_or_default();
+        [format!("/opt/homebrew/bin/{name}"), format!("/usr/local/bin/{name}"), format!("{home}/.local/bin/{name}"), format!("{home}/.npm-global/bin/{name}")]
+            .into_iter().map(PathBuf::from).find(|p| p.exists())
+    })
+}
+fn find_node() -> PathBuf {
+    if let Ok(p) = std::env::var("DOCU_COACH_NODE") { return p.into(); }
+    which("node").unwrap_or_else(|| "node".into())
+}
+
+/// ACP agents the app can find by itself: id, name, binary on PATH, arguments that start ACP over stdio.
+const KNOWN_AGENTS: &[(&str, &str, &str, &[&str])] = &[
+    ("devin", "Devin", "devin", &["acp"]),
+    ("claude-code-acp", "Claude Code (your own install)", "claude-code-acp", &[]),
+    ("codex", "Codex", "codex-acp", &[]),
+    ("gemini", "Gemini CLI", "gemini", &["--acp"]),
+    ("goose", "Goose", "goose", &["acp"]),
+];
+#[tauri::command]
+fn agents_discover() -> Vec<serde_json::Value> {
+    let found = which_all(&KNOWN_AGENTS.iter().map(|a| a.2).collect::<Vec<_>>());
+    let mut list = vec![serde_json::json!({ "id": "claude", "name": "Claude Code (bundled)", "path": "bundled with Margin; uses your Claude login", "found": true })];
+    for (id, name, bin, args) in KNOWN_AGENTS {
+        let path = found.get(*bin).cloned().or_else(|| which(bin));
+        list.push(serde_json::json!({ "id": id, "name": name, "found": path.is_some(),
+            "path": path.map(|p| format!("{} {}", p.display(), args.join(" ")).trim().to_string()).unwrap_or_else(|| format!("`{bin}` is not on your PATH")) }));
+    }
+    list.push(serde_json::json!({ "id": "custom", "name": "Custom ACP agent command", "path": "", "found": true }));
+    list
 }
 
 /* ---------- settings ---------- */
@@ -52,17 +85,22 @@ fn settings_set(app: AppHandle, value: serde_json::Value) -> Result<serde_json::
 fn run_config(app: &AppHandle) -> acp::RunConfig {
     let s = settings(app);
     acp::RunConfig {
-        claude: s["agent"].as_str() != Some("custom"),
+        claude: matches!(s["agent"].as_str(), Some("claude") | Some("claude-code-acp") | None),
         model: s["model"].as_str().unwrap_or("").trim().to_string(),
         effort: s["effort"].as_str().unwrap_or("").trim().to_string(),
         skills: s["skills"].as_array().map(|a| a.iter().filter_map(|v| v.as_str()).map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect()).unwrap_or_default(),
         use_my_settings: s["useMySettings"].as_bool().unwrap_or(false),
     }
 }
-/// The agent command: the bundled Claude Code adapter, or the custom command from Settings.
+/// The agent command: the bundled Claude Code adapter, a discovered agent, or the custom command from Settings.
 fn agent_command(app: &AppHandle) -> Result<(PathBuf, Vec<String>), String> {
     let s = settings(app);
-    if s["agent"].as_str() == Some("custom") {
+    let id = s["agent"].as_str().unwrap_or("claude");
+    if let Some((_, name, bin, args)) = KNOWN_AGENTS.iter().find(|a| a.0 == id) {
+        let path = which(bin).ok_or_else(|| format!("{name} was not found: `{bin}` is not on your PATH. Install it, or choose another coach in Settings."))?;
+        return Ok((path, args.iter().map(|a| a.to_string()).collect()));
+    }
+    if id == "custom" {
         let cmd = s["command"].as_str().unwrap_or("").trim().to_string();
         if cmd.is_empty() { return Err("Settings: the custom agent has no command.".into()); }
         let args: Vec<String> = s["args"].as_str().unwrap_or("").split_whitespace().map(String::from).collect();
@@ -546,7 +584,7 @@ fn save_markdown(app: AppHandle, name: String, text: String) -> Result<String, S
 fn main() {
     tauri::Builder::default()
         .manage(Coach::default())
-        .invoke_handler(tauri::generate_handler![ask, save_markdown, extract_pdf, ws_info, ws_use, ws_forget, reveal, docs_list, doc_create, doc_load, doc_save, doc_delete, asset_save, diagrams_list, diagram_save, diagram_load, diagram_delete, files_list, file_add, file_read, file_delete, library_load, library_save, confluence_fetch, settings_get, settings_set, style_get, style_set, feedback_get, feedback_set, doc_snapshot, history_list, history_read, confluence_publish])
+        .invoke_handler(tauri::generate_handler![ask, save_markdown, extract_pdf, ws_info, ws_use, ws_forget, reveal, docs_list, doc_create, doc_load, doc_save, doc_delete, asset_save, diagrams_list, diagram_save, diagram_load, diagram_delete, files_list, file_add, file_read, file_delete, library_load, library_save, confluence_fetch, settings_get, settings_set, agents_discover, style_get, style_set, feedback_get, feedback_set, doc_snapshot, history_list, history_read, confluence_publish])
         .run(tauri::generate_context!())
         .expect("error while running Margin");
 }
@@ -561,6 +599,14 @@ mod tests {
     }
 }
 
+#[cfg(test)]
+mod discovery_tests {
+    #[test]
+    fn login_shell_lookup_finds_sh() {
+        assert_eq!(super::which("sh").map(|p| p.exists()), Some(true));
+        assert!(super::which("definitely-not-a-binary-xyz").is_none());
+    }
+}
 #[cfg(test)]
 mod workspace_tests {
     #[test]

@@ -132,6 +132,9 @@ impl Acp {
             "systemPrompt": {"mode": "override", "content": [{"type": "text", "text": system}]},
             "_meta": {"claudeCode": {"options": options}}
         }), 120)?;
+        // `systemPrompt` on session/new is a Claude-adapter extension; any other agent gets the instructions in the prompt itself.
+        let prompt_text = if run.claude { prompt.to_string() } else { format!("<instructions>\n{system}\n</instructions>\n\n{prompt}") };
+        let prompt = prompt_text.as_str();
         if !run.claude && !run.model.is_empty() {
             let sid = session["sessionId"].as_str().unwrap_or("").to_string();
             let _ = self.call("session/set_model", json!({"sessionId": sid, "modelId": run.model}), 30);
@@ -198,6 +201,24 @@ mod tests {
         let mut text = String::new();
         let stop = acp.ask("Reply with exactly: pong", "ping", &[], &super::RunConfig { claude: true, model: "claude-opus-5-5".into(), ..Default::default() }, |t| text.push_str(t)).unwrap();
         assert_eq!(stop.as_deref(), Some("end_turn"));
+        assert!(text.to_lowercase().contains("pong"), "got: {text}");
+    }
+}
+
+#[cfg(test)]
+mod devin {
+    /// A real turn through Devin's ACP server (`devin acp`), needs `devin auth login`.
+    /// `cargo test devin -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn real_devin_turn() {
+        let devin = std::path::PathBuf::from(std::env::var("HOME").unwrap()).join(".local/bin/devin");
+        let workdir = std::env::temp_dir().join("docu-coach-devin-test");
+        std::fs::create_dir_all(&workdir).unwrap();
+        let acp = super::Acp::start(&devin, &["acp".to_string()], &workdir).unwrap();
+        let mut text = String::new();
+        let stop = acp.ask("You are a test. Reply with exactly: pong", "ping", &[], &super::RunConfig { claude: false, ..Default::default() }, |t| text.push_str(t)).unwrap();
+        println!("stop={stop:?} text={text}");
         assert!(text.to_lowercase().contains("pong"), "got: {text}");
     }
 }

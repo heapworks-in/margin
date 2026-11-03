@@ -70,8 +70,9 @@ Images and diagrams are saved under the document's `assets/` folder and referenc
 ## Settings (⚙ in the header)
 
 - **Default data folder**: which workspace the app opens with.
-- **Coach agent**: Claude Code (bundled, uses your Claude login) or any other ACP agent by command and arguments
-  (for example `npx -y @agentclientprotocol/codex-acp`; Devin once Cognition ships an ACP agent).
+- **Coach agent**: Claude Code (bundled, uses your Claude login), or an agent Margin finds on your PATH at startup:
+  Devin (`devin acp`), your own Claude Code ACP install (`claude-code-acp`), Codex (`codex-acp`), Gemini CLI
+  (`gemini --acp`), Goose (`goose acp`). Nothing to configure: pick one. Anything else goes in as a custom command.
 - **Model** (`claude-opus-5-5` by default), **effort** (low … max), **skills** to preload (Claude Code skill names),
   and whether to load your own Claude Code user settings (off by default: the coach stays isolated).
 
