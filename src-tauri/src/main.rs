@@ -1,0 +1,506 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod acp;
+mod prompt;
+
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex};
+use tauri::{ipc::Channel, AppHandle, Manager};
+
+/// The running agent, started on the first coach request, restarted if it dies or Settings change.
+#[derive(Default)]
+struct Coach(Mutex<Option<(Arc<acp::Acp>, String)>>);
+
+/// Apps opened from Finder do not get your shell PATH (nvm, Homebrew), so ask the login shell.
+fn find_node() -> PathBuf {
+    if let Ok(p) = std::env::var("DOCU_COACH_NODE") {
+        return p.into();
+    }
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+    if let Ok(out) = Command::new(shell).args(["-ilc", "command -v node"]).stdin(Stdio::null()).stderr(Stdio::null()).output() {
+        let text = String::from_utf8_lossy(&out.stdout);
+        if let Some(p) = text.lines().rev().map(str::trim).find(|l| l.starts_with('/')) {
+            return p.into();
+        }
+    }
+    ["/opt/homebrew/bin/node", "/usr/local/bin/node"].iter().map(PathBuf::from).find(|p| p.exists()).unwrap_or_else(|| "node".into())
+}
+
+/* ---------- settings ---------- */
+fn settings(app: &AppHandle) -> serde_json::Value {
+    let cfg = read_config(app);
+    let mut s = cfg["settings"].clone();
+    if !s.is_object() { s = serde_json::json!({}); }
+    let defaults = serde_json::json!({
+        "agent": "claude", "command": "", "args": "",
+        "model": "claude-opus-5-5", "effort": "medium", "skills": [], "useMySettings": false
+    });
+    for (k, v) in defaults.as_object().unwrap() { if s.get(k).is_none() { s[k] = v.clone(); } }
+    s
+}
+#[tauri::command]
+fn settings_get(app: AppHandle) -> Result<serde_json::Value, String> { Ok(settings(&app)) }
+#[tauri::command]
+fn settings_set(app: AppHandle, value: serde_json::Value) -> Result<serde_json::Value, String> {
+    let mut cfg = read_config(&app);
+    let mut cur = settings(&app);
+    if let Some(obj) = value.as_object() { for (k, v) in obj { cur[k] = v.clone(); } }
+    cfg["settings"] = cur;
+    write_config(&app, &cfg)?;
+    Ok(settings(&app))
+}
+fn run_config(app: &AppHandle) -> acp::RunConfig {
+    let s = settings(app);
+    acp::RunConfig {
+        claude: s["agent"].as_str() != Some("custom"),
+        model: s["model"].as_str().unwrap_or("").trim().to_string(),
+        effort: s["effort"].as_str().unwrap_or("").trim().to_string(),
+        skills: s["skills"].as_array().map(|a| a.iter().filter_map(|v| v.as_str()).map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect()).unwrap_or_default(),
+        use_my_settings: s["useMySettings"].as_bool().unwrap_or(false),
+    }
+}
+/// The agent command: the bundled Claude Code adapter, or the custom command from Settings.
+fn agent_command(app: &AppHandle) -> Result<(PathBuf, Vec<String>), String> {
+    let s = settings(app);
+    if s["agent"].as_str() == Some("custom") {
+        let cmd = s["command"].as_str().unwrap_or("").trim().to_string();
+        if cmd.is_empty() { return Err("Settings: the custom agent has no command.".into()); }
+        let args: Vec<String> = s["args"].as_str().unwrap_or("").split_whitespace().map(String::from).collect();
+        return Ok((PathBuf::from(cmd), args));
+    }
+    let script = app.path().resource_dir().map_err(|e| e.to_string())?
+        .join("node_modules/@agentclientprotocol/claude-agent-acp/dist/index.js");
+    Ok((find_node(), vec![script.to_string_lossy().to_string()]))
+}
+
+fn agent(app: &AppHandle) -> Result<Arc<acp::Acp>, String> {
+    let state = app.state::<Coach>();
+    let mut slot = state.0.lock().unwrap();
+    let (program, args) = agent_command(app)?;
+    let key = format!("{}|{}", program.display(), args.join(" "));
+    if let Some((a, _)) = slot.as_ref().filter(|(a, k)| a.alive() && *k == key) {
+        return Ok(a.clone());
+    }
+    *slot = None; // drops (and kills) a previous agent started with a different command
+    // Empty working folder: the coach never sees your files.
+    let workdir = std::env::temp_dir().join("margin-coach");
+    std::fs::create_dir_all(&workdir).map_err(|e| e.to_string())?;
+    let a = Arc::new(acp::Acp::start(&program, &args, &workdir)?);
+    *slot = Some((a.clone(), key));
+    Ok(a)
+}
+
+#[tauri::command]
+async fn ask(app: AppHandle, body: serde_json::Value, on_chunk: Channel<String>) -> Result<(), String> {
+    let prompt = prompt::build(&body);
+    let images = prompt::images(&body);
+    tauri::async_runtime::spawn_blocking(move || {
+        let run = run_config(&app);
+        let stop = agent(&app)?.ask(prompt::SYSTEM, &prompt, &images, &run, |t| {
+            let _ = on_chunk.send(t.to_string());
+        });
+        let note = match stop {
+            Ok(Some(r)) if r == "refusal" => "\n\nThe coach could not answer this one. Try asking in a different way.",
+            Ok(Some(r)) if r == "max_tokens" => "\n\n(The answer was cut off because it was too long. Ask the coach to continue.)",
+            Ok(_) => "",
+            Err(e) if e.to_lowercase().contains("auth") => {
+                return Err(format!("The coach is not logged in ({e}). Run `claude` in a terminal, log in with /login, then try again."))
+            }
+            Err(e) => return Err(format!("The coach had a problem: {e}")),
+        };
+        if !note.is_empty() {
+            let _ = on_chunk.send(note.into());
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Text of a PDF the writer attached as context (base64 bytes in, plain text out).
+#[tauri::command]
+async fn extract_pdf(data: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        use base64::Engine;
+        let bytes = base64::engine::general_purpose::STANDARD.decode(data).map_err(|e| e.to_string())?;
+        let text = pdf_extract::extract_text_from_mem(&bytes).map_err(|e| format!("Could not read this PDF: {e}"))?;
+        let text = text.trim();
+        if text.is_empty() { return Err("This PDF has no text layer (it may be scanned images).".into()); }
+        Ok(text.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/* ---------- workspaces: a folder with documents/, diagrams/ and files/ ---------- */
+// Config in the app's config dir: { "workspaces": [paths], "current": path }.
+fn config_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join("config.json");
+    // First run after the rename from Docu Coach: carry the old config over.
+    if !path.exists() {
+        if let Some(old) = dir.parent().map(|p| p.join("com.docucoach.desktop").join("config.json")) {
+            if old.exists() { let _ = std::fs::copy(&old, &path); }
+        }
+    }
+    Ok(path)
+}
+fn read_config(app: &AppHandle) -> serde_json::Value {
+    std::fs::read_to_string(config_path(app).unwrap_or_default()).ok()
+        .and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_else(|| serde_json::json!({}))
+}
+fn write_config(app: &AppHandle, v: &serde_json::Value) -> Result<(), String> {
+    std::fs::write(config_path(app)?, v.to_string()).map_err(|e| e.to_string())
+}
+/// Makes sure a folder is a workspace: subfolders plus workspace.json. Old flat layouts
+/// (document folders directly inside) are moved into documents/.
+fn init_workspace(dir: &Path) -> Result<(), String> {
+    for sub in ["documents", "diagrams", "files"] {
+        std::fs::create_dir_all(dir.join(sub)).map_err(|e| format!("Cannot create {}: {e}", dir.join(sub).display()))?;
+    }
+    for entry in std::fs::read_dir(dir).map_err(|e| e.to_string())?.flatten() {
+        let p = entry.path();
+        if p.is_dir() && p.join("document.json").exists() {
+            let _ = std::fs::rename(&p, dir.join("documents").join(entry.file_name()));
+        }
+    }
+    let meta = dir.join("workspace.json");
+    if !meta.exists() {
+        let name = dir.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "Workspace".into());
+        std::fs::write(&meta, serde_json::json!({ "name": name, "created": now_ms() }).to_string()).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+fn now_ms() -> u64 { std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0) }
+fn workspace(app: &AppHandle) -> Result<PathBuf, String> {
+    let cfg = read_config(app);
+    let dir = match cfg["current"].as_str() {
+        Some(p) if !p.is_empty() => PathBuf::from(p),
+        _ => {
+            let docs = app.path().document_dir().map_err(|e| e.to_string())?;
+            // Keep using an existing Docu Coach folder; new installs get ~/Documents/Margin.
+            let old = docs.join("Docu Coach");
+            if old.exists() { old } else { docs.join("Margin") }
+        }
+    };
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Cannot create the workspace folder {}: {e}", dir.display()))?;
+    init_workspace(&dir)?;
+    Ok(dir)
+}
+fn ws_name(dir: &Path) -> String {
+    std::fs::read_to_string(dir.join("workspace.json")).ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .and_then(|v| v["name"].as_str().map(String::from))
+        .unwrap_or_else(|| dir.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default())
+}
+fn slug(name: &str) -> String {
+    let s: String = name.chars().flat_map(|c| if c.is_alphanumeric() { c.to_lowercase().collect::<Vec<_>>() } else { vec!['-'] }).collect();
+    let s = s.split('-').filter(|p| !p.is_empty()).collect::<Vec<_>>().join("-");
+    if s.is_empty() { "document".into() } else { s.chars().take(60).collect() }
+}
+fn safe_name(name: &str) -> Result<String, String> {
+    if name.is_empty() || name.contains(['/', '\\']) || name.starts_with('.') || name.contains("..") { return Err("bad name".into()); }
+    Ok(name.to_string())
+}
+fn doc_dir(app: &AppHandle, id: &str) -> Result<PathBuf, String> {
+    if id.is_empty() || id.contains(['/', '\\', '.']) { return Err("bad document id".into()); }
+    Ok(workspace(app)?.join("documents").join(id))
+}
+
+/// The current workspace and all known ones.
+#[tauri::command]
+fn ws_info(app: AppHandle) -> Result<serde_json::Value, String> {
+    let cur = workspace(&app)?;
+    let mut cfg = read_config(&app);
+    let mut list: Vec<String> = cfg["workspaces"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect()).unwrap_or_default();
+    let cur_s = cur.display().to_string();
+    if !list.contains(&cur_s) { list.insert(0, cur_s.clone()); cfg["workspaces"] = serde_json::json!(list); cfg["current"] = serde_json::json!(cur_s); write_config(&app, &cfg)?; }
+    let known: Vec<serde_json::Value> = list.iter().map(|p| serde_json::json!({ "path": p, "name": ws_name(Path::new(p)), "exists": Path::new(p).exists() })).collect();
+    Ok(serde_json::json!({ "path": cur_s, "name": ws_name(&cur), "workspaces": known }))
+}
+
+/// Adds (creating if needed) a workspace folder and switches to it.
+#[tauri::command]
+fn ws_use(app: AppHandle, path: String, name: Option<String>) -> Result<serde_json::Value, String> {
+    let p = PathBuf::from(path.trim());
+    if !p.is_absolute() { return Err("Give a full path, for example /Users/you/Documents/Writing".into()); }
+    std::fs::create_dir_all(&p).map_err(|e| format!("Cannot use that folder: {e}"))?;
+    init_workspace(&p)?;
+    if let Some(n) = name.filter(|n| !n.trim().is_empty()) {
+        std::fs::write(p.join("workspace.json"), serde_json::json!({ "name": n.trim(), "created": now_ms() }).to_string()).map_err(|e| e.to_string())?;
+    }
+    let mut cfg = read_config(&app);
+    let mut list: Vec<String> = cfg["workspaces"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect()).unwrap_or_default();
+    let ps = p.display().to_string();
+    if !list.contains(&ps) { list.push(ps.clone()); }
+    cfg["workspaces"] = serde_json::json!(list); cfg["current"] = serde_json::json!(ps);
+    write_config(&app, &cfg)?;
+    ws_info(app)
+}
+
+#[tauri::command]
+fn ws_forget(app: AppHandle, path: String) -> Result<serde_json::Value, String> {
+    let mut cfg = read_config(&app);
+    let list: Vec<String> = cfg["workspaces"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).filter(|p| p != &path).collect()).unwrap_or_default();
+    if cfg["current"].as_str() == Some(path.as_str()) { cfg["current"] = serde_json::json!(list.first().cloned().unwrap_or_default()); }
+    cfg["workspaces"] = serde_json::json!(list);
+    write_config(&app, &cfg)?;
+    ws_info(app)
+}
+
+/// Opens the workspace, a document folder, or a file inside the workspace in Finder.
+#[tauri::command]
+fn reveal(app: AppHandle, id: Option<String>, sub: Option<String>) -> Result<(), String> {
+    let p = match (id, sub) {
+        (Some(id), _) => doc_dir(&app, &id)?,
+        (None, Some(sub)) => workspace(&app)?.join(safe_name(&sub)?),
+        _ => workspace(&app)?,
+    };
+    Command::new("open").arg(p).spawn().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Every document in the workspace, newest first: the `meta` the app saved plus the id.
+#[tauri::command]
+fn docs_list(app: AppHandle) -> Result<Vec<serde_json::Value>, String> {
+    let mut out = vec![];
+    for entry in std::fs::read_dir(workspace(&app)?.join("documents")).map_err(|e| e.to_string())?.flatten() {
+        let file = entry.path().join("document.json");
+        let Ok(text) = std::fs::read_to_string(&file) else { continue };
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else { continue };
+        let mut meta = v["meta"].clone();
+        if !meta.is_object() { meta = serde_json::json!({}); }
+        meta["id"] = serde_json::Value::String(entry.file_name().to_string_lossy().into());
+        meta["title"] = v["title"].clone();
+        meta["templateId"] = v["templateId"].clone();
+        if let Ok(m) = std::fs::metadata(&file).and_then(|m| m.modified()) {
+            meta["updated"] = serde_json::json!(m.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0));
+        }
+        out.push(meta);
+    }
+    out.sort_by_key(|m| std::cmp::Reverse(m["updated"].as_u64().unwrap_or(0)));
+    Ok(out)
+}
+
+#[tauri::command]
+fn doc_create(app: AppHandle, title: String) -> Result<String, String> {
+    let base = slug(&title);
+    let mut id = base.clone();
+    let mut n = 2;
+    while doc_dir(&app, &id)?.exists() { id = format!("{base}-{n}"); n += 1; }
+    std::fs::create_dir_all(doc_dir(&app, &id)?.join("assets")).map_err(|e| e.to_string())?;
+    Ok(id)
+}
+
+#[tauri::command]
+fn doc_load(app: AppHandle, id: String) -> Result<String, String> {
+    std::fs::read_to_string(doc_dir(&app, &id)?.join("document.json")).map_err(|e| format!("Cannot open this document: {e}"))
+}
+
+/// Writes document.json and a Markdown copy next to it.
+#[tauri::command]
+fn doc_save(app: AppHandle, id: String, json: String, markdown: String) -> Result<(), String> {
+    let dir = doc_dir(&app, &id)?;
+    std::fs::create_dir_all(dir.join("assets")).map_err(|e| e.to_string())?;
+    let tmp = dir.join("document.json.tmp");
+    std::fs::write(&tmp, json).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, dir.join("document.json")).map_err(|e| e.to_string())?;
+    std::fs::write(dir.join("document.md"), markdown).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn doc_delete(app: AppHandle, id: String) -> Result<(), String> {
+    let dir = doc_dir(&app, &id)?;
+    if dir.join("document.json").exists() { std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())?; }
+    Ok(())
+}
+
+/// Saves an image (base64) into the document's assets folder; returns the file name.
+#[tauri::command]
+fn asset_save(app: AppHandle, id: String, name: String, data: String) -> Result<String, String> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(data).map_err(|e| e.to_string())?;
+    let safe: String = name.chars().map(|c| if c.is_alphanumeric() || c == '.' || c == '-' || c == '_' { c } else { '-' }).collect();
+    let dir = doc_dir(&app, &id)?.join("assets");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    std::fs::write(dir.join(&safe), bytes).map_err(|e| e.to_string())?;
+    Ok(safe)
+}
+
+/* ---------- workspace diagrams and files ---------- */
+fn list_dir(dir: &Path) -> Vec<serde_json::Value> {
+    let mut out = vec![];
+    if let Ok(rd) = std::fs::read_dir(dir) {
+        for e in rd.flatten() {
+            let p = e.path();
+            if !p.is_file() || e.file_name().to_string_lossy().starts_with('.') { continue; }
+            let m = std::fs::metadata(&p).ok();
+            out.push(serde_json::json!({
+                "name": e.file_name().to_string_lossy(),
+                "size": m.as_ref().map(|m| m.len()).unwrap_or(0),
+                "updated": m.and_then(|m| m.modified().ok()).and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_millis() as u64).unwrap_or(0),
+            }));
+        }
+    }
+    out.sort_by_key(|v| std::cmp::Reverse(v["updated"].as_u64().unwrap_or(0)));
+    out
+}
+/// Diagrams: `<name>.svg` to show and `<name>.excalidraw` to edit again.
+#[tauri::command]
+fn diagrams_list(app: AppHandle) -> Result<Vec<serde_json::Value>, String> {
+    let dir = workspace(&app)?.join("diagrams");
+    Ok(list_dir(&dir).into_iter().filter(|v| v["name"].as_str().map_or(false, |n| n.ends_with(".svg"))).map(|mut v| {
+        let n = v["name"].as_str().unwrap_or("").trim_end_matches(".svg").to_string();
+        v["svg"] = serde_json::json!(std::fs::read_to_string(dir.join(format!("{n}.svg"))).unwrap_or_default());
+        v["name"] = serde_json::json!(n);
+        v
+    }).collect())
+}
+#[tauri::command]
+fn diagram_save(app: AppHandle, name: String, svg: String, scene: String) -> Result<String, String> {
+    let dir = workspace(&app)?.join("diagrams");
+    let n = slug(&name);
+    std::fs::write(dir.join(format!("{n}.svg")), svg).map_err(|e| e.to_string())?;
+    std::fs::write(dir.join(format!("{n}.excalidraw")), scene).map_err(|e| e.to_string())?;
+    Ok(n)
+}
+#[tauri::command]
+fn diagram_load(app: AppHandle, name: String) -> Result<serde_json::Value, String> {
+    let dir = workspace(&app)?.join("diagrams");
+    let n = safe_name(&name)?;
+    Ok(serde_json::json!({
+        "svg": std::fs::read_to_string(dir.join(format!("{n}.svg"))).map_err(|e| e.to_string())?,
+        "scene": std::fs::read_to_string(dir.join(format!("{n}.excalidraw"))).unwrap_or_default(),
+    }))
+}
+#[tauri::command]
+fn diagram_delete(app: AppHandle, name: String) -> Result<(), String> {
+    let dir = workspace(&app)?.join("diagrams");
+    let n = safe_name(&name)?;
+    let _ = std::fs::remove_file(dir.join(format!("{n}.svg")));
+    let _ = std::fs::remove_file(dir.join(format!("{n}.excalidraw")));
+    Ok(())
+}
+/// The Excalidraw shape library for this workspace (diagrams/library.json).
+#[tauri::command]
+fn library_load(app: AppHandle) -> Result<String, String> {
+    Ok(std::fs::read_to_string(workspace(&app)?.join("diagrams").join("library.json")).unwrap_or_else(|_| "[]".into()))
+}
+#[tauri::command]
+fn library_save(app: AppHandle, json: String) -> Result<(), String> {
+    std::fs::write(workspace(&app)?.join("diagrams").join("library.json"), json).map_err(|e| e.to_string())
+}
+
+/// House style rules for the workspace (style.md), applied in every review.
+#[tauri::command]
+fn style_get(app: AppHandle) -> Result<String, String> {
+    Ok(std::fs::read_to_string(workspace(&app)?.join("style.md")).unwrap_or_default())
+}
+#[tauri::command]
+fn style_set(app: AppHandle, text: String) -> Result<(), String> {
+    std::fs::write(workspace(&app)?.join("style.md"), text).map_err(|e| e.to_string())
+}
+
+/// Shared files: context any document can attach.
+#[tauri::command]
+fn files_list(app: AppHandle) -> Result<Vec<serde_json::Value>, String> { Ok(list_dir(&workspace(&app)?.join("files"))) }
+#[tauri::command]
+fn file_add(app: AppHandle, name: String, data: String) -> Result<String, String> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(data).map_err(|e| e.to_string())?;
+    let safe: String = name.chars().map(|c| if c.is_alphanumeric() || c == '.' || c == '-' || c == '_' { c } else { '-' }).collect();
+    std::fs::write(workspace(&app)?.join("files").join(&safe), bytes).map_err(|e| e.to_string())?;
+    Ok(safe)
+}
+#[tauri::command]
+fn file_read(app: AppHandle, name: String) -> Result<String, String> {
+    use base64::Engine;
+    let bytes = std::fs::read(workspace(&app)?.join("files").join(safe_name(&name)?)).map_err(|e| e.to_string())?;
+    Ok(base64::engine::general_purpose::STANDARD.encode(bytes))
+}
+#[tauri::command]
+fn file_delete(app: AppHandle, name: String) -> Result<(), String> {
+    std::fs::remove_file(workspace(&app)?.join("files").join(safe_name(&name)?)).map_err(|e| e.to_string())
+}
+
+/* ---------- import from Confluence ---------- */
+/// Fetches a Confluence Cloud page as export HTML. `url` is the page link; `email` + `token` an Atlassian API token.
+#[tauri::command]
+async fn confluence_fetch(url: String, email: String, token: String) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let u = reqwest::Url::parse(url.trim()).map_err(|_| "That is not a valid page link.".to_string())?;
+        let segs: Vec<&str> = u.path_segments().map(|s| s.collect()).unwrap_or_default();
+        let from_path = segs.iter().position(|s| *s == "pages").and_then(|i| segs.get(i + 1)).map(|s| s.to_string());
+        let from_query = u.query_pairs().find(|(k, _)| k == "pageId").map(|(_, v)| v.into_owned());
+        let id = from_path.or(from_query).filter(|s| !s.is_empty() && s.chars().all(|c| c.is_ascii_digit()))
+            .ok_or("Cannot find a page id in that link. Use the page URL from your browser (it contains /pages/<id>/).")?;
+        let base = format!("{}://{}", u.scheme(), u.host_str().unwrap_or_default());
+        let api = format!("{base}/wiki/api/v2/pages/{id}?body-format=export_view");
+        let client = reqwest::blocking::Client::builder().timeout(std::time::Duration::from_secs(30)).build().map_err(|e| e.to_string())?;
+        let res = client.get(&api).basic_auth(email.trim(), Some(token.trim())).header("Accept", "application/json").send().map_err(|e| format!("Could not reach Confluence: {e}"))?;
+        let status = res.status();
+        if status.as_u16() == 401 || status.as_u16() == 403 { return Err("Confluence refused the login. Check the email and the API token (create one at id.atlassian.com/manage-profile/security/api-tokens).".into()); }
+        if status.as_u16() == 404 { return Err("Confluence did not find that page with this account.".into()); }
+        if !status.is_success() { return Err(format!("Confluence answered {status}.")); }
+        let v: serde_json::Value = res.json().map_err(|e| e.to_string())?;
+        Ok(serde_json::json!({ "title": v["title"], "html": v["body"]["export_view"]["value"] }))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Saves the document as Markdown in Downloads and returns the path.
+#[tauri::command]
+fn save_markdown(app: AppHandle, name: String, text: String) -> Result<String, String> {
+    let dir = app.path().download_dir().map_err(|e| e.to_string())?;
+    let stem: String = name.chars().map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '-' }).collect();
+    let stem = if stem.trim_matches('-').is_empty() { "document".to_string() } else { stem };
+    let mut path = dir.join(format!("{stem}.md"));
+    let mut n = 1;
+    while path.exists() {
+        path = dir.join(format!("{stem}-{n}.md"));
+        n += 1;
+    }
+    std::fs::write(&path, text).map_err(|e| e.to_string())?;
+    Ok(path.display().to_string())
+}
+
+fn main() {
+    tauri::Builder::default()
+        .manage(Coach::default())
+        .invoke_handler(tauri::generate_handler![ask, save_markdown, extract_pdf, ws_info, ws_use, ws_forget, reveal, docs_list, doc_create, doc_load, doc_save, doc_delete, asset_save, diagrams_list, diagram_save, diagram_load, diagram_delete, files_list, file_add, file_read, file_delete, library_load, library_save, confluence_fetch, settings_get, settings_set, style_get, style_set])
+        .run(tauri::generate_context!())
+        .expect("error while running Margin");
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn slugs() {
+        assert_eq!(super::slug("Rate limiter for the Payments API"), "rate-limiter-for-the-payments-api");
+        assert_eq!(super::slug("  ***  "), "document");
+        assert_eq!(super::slug("Ünïcode: ok?"), "ünïcode-ok");
+    }
+}
+
+#[cfg(test)]
+mod workspace_tests {
+    #[test]
+    fn migrates_flat_layout() {
+        let dir = std::env::temp_dir().join(format!("docu-ws-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("old-doc/assets")).unwrap();
+        std::fs::write(dir.join("old-doc/document.json"), "{}").unwrap();
+        super::init_workspace(&dir).unwrap();
+        assert!(dir.join("documents/old-doc/document.json").exists(), "document moved into documents/");
+        assert!(!dir.join("old-doc").exists());
+        assert!(dir.join("workspace.json").exists());
+        assert!(dir.join("diagrams").is_dir() && dir.join("files").is_dir());
+        // Running it again is harmless.
+        super::init_workspace(&dir).unwrap();
+        assert!(dir.join("documents/old-doc/document.json").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

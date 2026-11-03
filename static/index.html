@@ -1,0 +1,1741 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Margin</title>
+<link href="vendor/fonts/fonts.css" rel="stylesheet">
+<script src="vendor/editor.js?v=28"></script>
+<style>
+:root{
+  color-scheme:dark;
+  --canvas:#0E1117; --paper:#0E1117; --panel:#151A22; --hover:#1C222C; --raise:#242B37;
+  --line:#232A35; --line-strong:#313A48;
+  --ink:#E6E9EE; --ink-2:#C2C8D2; --muted:#8A93A3; --faint:#5C6573;
+  --accent:#5B9CFF; --accent-ink:#8FBCFF; --accent-soft:#16283F;
+  --green:#48D597;
+  --english:#6AA6FF; --missing:#F2B64B; --fact:#FF7B86; --question:#4ECBA9; --structure:#9AA1AC; --draft:#4C8DFF;
+  --english-bg:#1D2E4A; --missing-bg:#3A2F12; --fact-bg:#3F1F27; --question-bg:#143A33; --structure-bg:#2A2E35;
+  --ui:"Manrope",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--canvas);color:var(--ink);font:13.5px/1.5 var(--ui);font-feature-settings:"ss01","cv11";display:flex;flex-direction:column;-webkit-font-smoothing:antialiased;overflow:hidden}
+button,select,textarea,input{font:inherit;color:inherit}
+button{cursor:pointer}
+button:disabled{opacity:.45;cursor:default}
+:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+::selection{background:#3D4C8A}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:#3A3F48;border-radius:10px;border:3px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-track{background:transparent}
+
+/* ---------- header ---------- */
+.bar{height:48px;flex:none;display:flex;align-items:center;gap:8px;padding:0 14px 0 86px;background:var(--paper);border-bottom:1px solid var(--line);-webkit-user-select:none;user-select:none}
+.brand{display:inline-flex;align-items:center;gap:8px;font-weight:700;color:var(--ink);letter-spacing:-.01em}
+.brand i{width:10px;height:10px;border-radius:3px;background:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);display:inline-block}
+.crumb{color:var(--faint);margin:0 2px}
+.pick{position:relative}
+.pick select{appearance:none;background:none;border:1px solid transparent;border-radius:6px;padding:4px 22px 4px 6px;color:var(--ink-2)}
+.pick select:hover{background:var(--hover)}
+.pick::after{content:"";position:absolute;right:9px;top:50%;width:5px;height:5px;border-right:1.5px solid var(--muted);border-bottom:1.5px solid var(--muted);transform:translateY(-70%) rotate(45deg);pointer-events:none}
+.views{display:flex;gap:2px;margin-left:10px;background:var(--hover);border-radius:7px;padding:2px}
+.views button{background:none;border:0;border-radius:5px;padding:3px 10px;color:var(--muted)}
+.views button[aria-pressed="true"]{background:var(--raise);color:var(--ink)}
+.views button .n{color:var(--faint);margin-left:5px}
+.spacer{flex:1;align-self:stretch}
+.saved{display:inline-flex;align-items:center;gap:5px;color:var(--green);font-size:12.5px;opacity:0;transition:opacity .4s}
+.saved.show{opacity:1}
+.meta{color:var(--muted);font-size:12.5px;margin:0 6px}
+.tool{background:none;border:0;border-radius:6px;padding:5px 9px;color:var(--ink-2);list-style:none;cursor:pointer}
+.tool:hover{background:var(--hover)}
+.tool.danger{color:var(--fact)}
+.btn{border:1px solid var(--line-strong);background:var(--paper);border-radius:7px;padding:5px 11px;font-weight:500;color:var(--ink)}
+.btn:hover{background:var(--hover)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#0B1326}
+.btn.primary:hover{background:var(--accent-ink)}
+.dd{position:relative}
+.dd summary::-webkit-details-marker{display:none}
+.dd summary::after{content:" ▾";color:var(--muted);font-size:11px}
+.dd[open] summary{background:var(--hover)}
+.dd-menu{position:absolute;right:0;top:calc(100% + 4px);min-width:220px;background:var(--panel);border:1px solid var(--line-strong);border-radius:8px;padding:4px;box-shadow:0 12px 32px -10px #000c;z-index:60;display:flex;flex-direction:column}
+.dd-menu button{background:none;border:0;text-align:left;padding:7px 10px;border-radius:6px;color:var(--ink)}
+.dd-menu button:hover{background:var(--hover)}
+
+/* ---------- layout ---------- */
+.app{flex:1;min-height:0;position:relative;display:flex;flex-direction:column}
+.app.focus .toc,.app.focus .dock,.app.focus .status,.app.in-library .toc,.app.in-library .dock,.app.in-library .status{display:none}
+.app.in-library~* .views{visibility:hidden}
+.app.focus .sheet-wrap{padding-bottom:120px}
+
+/* ---------- section spine (floating, left margin) ---------- */
+.toc{position:absolute;left:16px;top:28px;z-index:6;padding:8px 6px;border:1px solid transparent;border-radius:10px;transition:background .15s,border-color .15s,box-shadow .15s}
+.toc:hover{background:var(--panel);border-color:var(--line-strong);box-shadow:0 14px 36px -14px #000;padding:8px}
+.toc-item{display:flex;align-items:center;gap:10px;height:14px;width:100%;background:none;border:0;padding:0 4px;color:var(--muted);border-radius:6px;text-align:left;transition:height .15s}
+.toc-item .tick{width:16px;height:2px;border-radius:2px;background:#30343C;flex:none;transition:background .15s,width .15s}
+.toc-item.missing .tick{background:repeating-linear-gradient(90deg,#4A4F58 0 3px,transparent 3px 6px)}
+.toc-item.filled .tick{background:#8B919C}
+.toc-item.on .tick{background:var(--accent);width:22px;height:3px}
+.toc-item.notes .tick{width:8px;margin-right:8px}
+.toc-item .label,.toc-item .count,.toc-foot{display:none}
+.toc:hover .toc-item{height:28px}
+.toc:hover .toc-item:hover{background:var(--hover);color:var(--ink)}
+.toc:hover .toc-item.on{color:var(--ink)}
+.toc:hover .toc-item.missing{color:var(--faint)}
+.toc:hover .toc-item .label{display:block;font-size:13px;white-space:nowrap}
+.toc:hover .toc-item .count{display:block;margin-left:auto;padding-left:18px;font-size:11.5px;color:var(--faint);white-space:nowrap}
+.toc-foot{border-top:1px solid var(--line);margin-top:6px;padding:8px 4px 2px;font-size:11.5px;color:var(--faint);white-space:nowrap}
+.toc:hover .toc-foot{display:block}
+
+/* ---------- coach dock (bottom) ---------- */
+.dock{position:absolute;left:50%;transform:translateX(-50%);bottom:42px;width:min(900px,calc(100% - 48px));z-index:8;display:flex;flex-direction:column;gap:8px}
+.thread{display:flex;flex-direction:column;max-height:44vh;background:var(--panel);border:1px solid var(--line-strong);border-radius:12px;box-shadow:0 18px 48px -20px #000}
+.thread[hidden]{display:none}
+.thread-head{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--line)}
+.coach-name{font-weight:700;color:var(--accent-ink)}
+.dock-line{flex:1;font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dock-line b{color:var(--ink);font-weight:600}
+.dock.busy .coach-name::after{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-left:7px;animation:blink 1.1s infinite}
+.log{flex:1;min-height:0;overflow:auto;padding:10px 14px 12px;display:flex;flex-direction:column;gap:10px}
+.msg.user{align-self:flex-end;max-width:80%;background:var(--accent-soft);color:#CFE0FF;padding:6px 10px;border-radius:10px 10px 3px 10px;white-space:pre-wrap;font-size:12.5px}
+.msg.assistant{display:flex;flex-direction:column;gap:6px;color:var(--ink-2);font-size:13px;max-width:70ch}
+.md p{margin:0 0 6px}.md p:last-child{margin:0}
+.md ul,.md ol{margin:0 0 6px;padding-left:18px}
+.md li{margin:2px 0}
+.md b{color:var(--ink);font-weight:600}
+.md h4{margin:4px 0;font-size:13px;color:var(--ink)}
+.md code{background:var(--hover);padding:1px 5px;border-radius:4px;font-size:12px;font-family:var(--mono)}
+.added{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--accent-ink);background:var(--accent-soft);border-radius:999px;padding:2px 9px;width:max-content;border:0;cursor:pointer}
+.welcome{color:var(--muted);font-size:12.5px;line-height:1.5}
+.welcome b{color:var(--ink);font-weight:500}
+.typing{display:inline-flex;gap:4px;padding:6px 2px}
+.typing i{width:5px;height:5px;border-radius:50%;background:var(--muted);opacity:.3;animation:blink 1.2s infinite}
+.typing i:nth-child(2){animation-delay:.15s}.typing i:nth-child(3){animation-delay:.3s}
+@keyframes blink{40%{opacity:1}}
+.pending{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12.5px}
+.ask{background:var(--panel);border:1px solid var(--line-strong);border-radius:14px;box-shadow:0 18px 48px -20px #000;padding:8px 10px 10px;display:flex;flex-direction:column;gap:8px}
+.ask-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.modes{display:flex;gap:2px;background:var(--canvas);border-radius:7px;padding:2px}
+.modes button{border:0;background:none;border-radius:5px;padding:3px 9px;font-size:12.5px;color:var(--muted)}
+.modes button[aria-pressed="true"]{background:var(--raise);color:var(--ink)}
+.actions{display:flex;flex-wrap:wrap;gap:5px}
+.actions button{background:none;border:1px solid var(--line-strong);color:var(--ink-2);font-size:12px;padding:3px 9px;border-radius:999px}
+.actions button:hover{background:var(--hover)}
+#thread-show{margin-left:auto}
+.composer{display:flex;align-items:flex-end;gap:6px;background:var(--canvas);border:1px solid var(--line-strong);border-radius:10px;padding:5px 5px 5px 12px}
+.composer:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.composer textarea{flex:1;resize:none;border:0;outline:none;background:none;color:var(--ink);padding:5px 0;max-height:140px;line-height:1.45;font-size:13.5px}
+.composer textarea::placeholder{color:var(--faint)}
+.send{flex:none;width:30px;height:30px;border-radius:7px;border:0;background:var(--accent);color:#0B1326;display:grid;place-items:center}
+.send:hover{background:var(--accent-ink)}
+
+/* ---------- library ---------- */
+.brand{border:0;background:none;padding:4px 6px;border-radius:6px;cursor:pointer}
+.brand:hover{background:var(--hover)}
+.library{width:100%}
+.library[hidden]{display:none}
+.lib-head{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:6px}
+.lib-head h1{font:700 32px/1.2 var(--ui);letter-spacing:-.02em;margin:0}
+.lib-folder{color:var(--muted);font-size:12.5px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 8px}
+.lib-folder code{font-family:var(--mono);font-size:12px;color:var(--ink-2);background:var(--panel);padding:2px 7px;border-radius:5px}
+.lib-folder button,.lib-folder label{background:none;border:0;color:var(--accent-ink);font:inherit;cursor:pointer;padding:0}
+.lib-folder input{background:var(--panel);border:1px solid var(--line-strong);border-radius:6px;color:var(--ink);font:12.5px var(--mono);padding:4px 8px;min-width:360px}
+.lib-new{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 28px;padding:14px 16px;background:var(--panel);border:1px solid var(--line);border-radius:12px}
+.lib-new input{flex:1;min-width:240px;background:var(--canvas);border:1px solid var(--line-strong);border-radius:8px;color:var(--ink);font:14px var(--ui);padding:8px 12px;outline:none}
+.lib-new input:focus{border-color:var(--accent)}
+.lib-new select{appearance:none;background:var(--canvas);border:1px solid var(--line-strong);border-radius:8px;color:var(--ink);padding:8px 30px 8px 12px}
+.lib-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+.doc{position:relative;text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 16px 14px;cursor:pointer;color:var(--ink);display:flex;flex-direction:column;gap:6px;min-height:132px;transition:border-color .15s}
+.doc:hover{border-color:var(--line-strong)}
+.doc .t{font-weight:700;font-size:16px;letter-spacing:-.01em;line-height:1.3}
+.doc .k{font-size:12px;color:var(--muted)}
+.doc .m{margin-top:auto;display:flex;gap:12px;font-size:12px;color:var(--muted);flex-wrap:wrap}
+.doc .m b{color:var(--ink);font-weight:600}
+.doc .ok{color:var(--green)}.doc .warn{color:var(--missing)}
+.doc .x{position:absolute;top:10px;right:10px;background:none;border:0;color:var(--faint);font-size:14px;border-radius:5px;padding:2px 6px;opacity:0}
+.doc:hover .x{opacity:1}
+.doc .x:hover{color:var(--fact);background:var(--hover)}
+.lib-empty{color:var(--muted);line-height:1.6}
+/* images and diagrams in the text */
+.ProseMirror img{max-width:100%;height:auto;border-radius:8px;display:block}
+.ProseMirror img[data-scene]{cursor:pointer;background:#0B0E14;border:1px solid var(--line);padding:14px}
+.ProseMirror img.ProseMirror-selectednode{outline:2px solid var(--accent);outline-offset:2px}
+.dg-modal{position:fixed;inset:0;z-index:100;background:var(--canvas);display:flex;flex-direction:column}
+.dg-bar{height:48px;flex:none;display:flex;align-items:center;gap:12px;padding:0 16px;border-bottom:1px solid var(--line);background:var(--panel)}
+.dg-bar b{color:var(--ink)}
+.dg-hint{flex:1;color:var(--muted);font-size:12.5px}
+.dg-btn{border:1px solid var(--accent);background:var(--accent);color:#0B1326;border-radius:7px;padding:6px 12px;font:500 13px var(--ui);cursor:pointer}
+.dg-btn.ghost{background:none;color:var(--ink-2);border-color:var(--line-strong)}
+.dg-canvas{flex:1;min-height:0;position:relative}
+.dg-canvas .excalidraw{height:100%}
+/* fully local: no link out to the public library site */
+.excalidraw .library-menu-browse-button,.excalidraw a[href*="libraries.excalidraw.com"],.excalidraw a[href*="excalidraw.com"]{display:none!important}
+
+.ws-crumb{color:var(--ink-2);padding:4px 6px}
+.lib-head{align-items:center}
+.lib-head .path{color:var(--faint);font:12px var(--mono)}
+.lib-head .right{margin-left:auto;display:flex;gap:6px;align-items:center}
+.lib-head select{appearance:none;background:var(--panel);border:1px solid var(--line-strong);border-radius:8px;color:var(--ink);padding:6px 28px 6px 10px;font-size:13px}
+.lib-sec{margin:34px 0 0}
+.lib-sec-head{display:flex;align-items:baseline;gap:12px;margin-bottom:12px}
+.lib-sec-head h2{font:700 20px/1.2 var(--ui);letter-spacing:-.015em;margin:0}
+.lib-sec-head .n{color:var(--faint);font-size:12.5px}
+.lib-sec-head .right{margin-left:auto;display:flex;gap:6px}
+.lib-sec-head .btn{font-size:12.5px;padding:4px 10px}
+.dgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.dcard{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column}
+.dcard .thumb{height:140px;background:#0B0E14;display:grid;place-items:center;padding:10px;border-bottom:1px solid var(--line)}
+.dcard .thumb img{max-width:100%;max-height:100%}
+.dcard .body{padding:10px 12px;display:flex;flex-direction:column;gap:6px}
+.dcard .nm{font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dcard .row{display:flex;gap:6px;flex-wrap:wrap}
+.dcard .row button{background:none;border:1px solid var(--line-strong);color:var(--ink-2);border-radius:6px;padding:3px 8px;font-size:12px;cursor:pointer}
+.dcard .row button.primary{border-color:var(--accent);color:var(--accent-ink)}
+.dcard .row button:hover{background:var(--hover)}
+.flist{display:flex;flex-direction:column;gap:6px}
+.frow{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:13px}
+.frow .nm{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.frow small{color:var(--faint)}
+.frow button{background:none;border:1px solid var(--line-strong);color:var(--ink-2);border-radius:6px;padding:3px 8px;font-size:12px;cursor:pointer}
+.frow button:hover{background:var(--hover)}
+.modal{position:fixed;inset:0;z-index:90;background:#0008;display:grid;place-items:center}
+.modal[hidden]{display:none}
+.modal .box{width:min(560px,calc(100% - 40px));background:var(--panel);border:1px solid var(--line-strong);border-radius:14px;box-shadow:0 30px 80px -30px #000;padding:18px 20px 20px;display:flex;flex-direction:column;gap:12px}
+.modal h2{margin:0;font:700 20px/1.2 var(--ui);letter-spacing:-.015em}
+.modal .tabs{display:flex;gap:2px;background:var(--canvas);border-radius:8px;padding:2px;width:max-content}
+.modal .tabs button{border:0;background:none;border-radius:6px;padding:5px 12px;color:var(--muted);font-size:13px}
+.modal .tabs button[aria-pressed="true"]{background:var(--raise);color:var(--ink)}
+.modal label{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--muted)}
+.modal input[type=text],.modal input[type=email],.modal input[type=password],.modal select{background:var(--canvas);border:1px solid var(--line-strong);border-radius:8px;color:var(--ink);font:13.5px var(--ui);padding:8px 10px;outline:none}
+.modal input:focus{border-color:var(--accent)}
+.modal .drop{border:1px dashed var(--line-strong);border-radius:10px;padding:18px;text-align:center;color:var(--muted);font-size:13px;cursor:pointer}
+.modal .drop:hover,.modal .drop.over{border-color:var(--accent);color:var(--ink)}
+.modal .drop input{display:none}
+.modal .foot{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:4px}
+.modal .err{color:var(--fact);font-size:12.5px;margin-right:auto}
+.modal .note{font-size:12px;color:var(--faint);line-height:1.5}
+.ctx-ws{margin-top:10px;border-top:1px solid var(--line);padding-top:8px;font-size:12px;color:var(--muted)}
+.ctx-ws .frow{padding:5px 8px;font-size:12px;margin-top:4px}
+
+.settings{max-width:720px}
+.set-sec{margin:26px 0 0;padding:18px 20px;background:var(--panel);border:1px solid var(--line);border-radius:12px;display:flex;flex-direction:column;gap:12px}
+.set-sec h2{margin:0;font:700 16px/1.3 var(--ui);letter-spacing:-.01em}
+.set-sec p.note{margin:0;color:var(--muted);font-size:12.5px;line-height:1.5}
+.set-sec label{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--muted)}
+.set-sec label.row{flex-direction:row;align-items:center;gap:8px;color:var(--ink-2)}
+.set-sec input[type=text],.set-sec select{background:var(--canvas);border:1px solid var(--line-strong);border-radius:8px;color:var(--ink);font:13.5px var(--ui);padding:8px 10px;outline:none}
+.set-sec input[type=text]:focus{border-color:var(--accent)}
+.set-sec code{font-family:var(--mono);font-size:12px;color:var(--ink-2)}
+.set-foot{display:flex;gap:8px;align-items:center;margin-top:18px}
+.set-foot .msg{color:var(--green);font-size:12.5px}
+.set-foot .err{color:var(--fact);font-size:12.5px}
+.app.in-library .views{visibility:hidden}
+
+/* ---------- status bar (bottom, Word-style) ---------- */
+.status{position:absolute;left:0;right:0;bottom:0;height:32px;z-index:9;display:flex;align-items:center;gap:0;padding:0 10px;font-size:12px;color:var(--muted);background:var(--panel);border-top:1px solid var(--line)}
+.status>*{padding:0 10px;border-right:1px solid var(--line);white-space:nowrap}
+.status>*:last-child{border-right:0}
+.status .right{margin-left:auto;border-right:0;display:flex;padding:0}
+.status .right>*{padding:0 10px;border-left:1px solid var(--line)}
+.status b{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
+.status button{background:none;border:0;color:inherit;font:inherit;cursor:pointer;border-radius:4px;padding:3px 8px}
+.status button:hover{background:var(--hover);color:var(--ink)}
+.status .ok{color:var(--green)}
+.status .warn{color:var(--missing)}
+.pop.lessons{width:360px}
+.lesson-list{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+.lesson{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;align-items:baseline;font-size:12.5px;color:var(--ink-2)}
+.lesson b{font-variant-numeric:tabular-nums;color:var(--english);font-weight:700}
+.lesson .r{color:var(--ink);font-weight:600}
+.lesson small{grid-column:2;color:var(--muted);line-height:1.4}
+.lessons-empty{font-size:12px;color:var(--faint);line-height:1.5}
+.cards{display:flex;flex-direction:column;gap:8px}
+
+/* ---------- document + comment rail ---------- */
+.desk{flex:1;min-height:0;display:flex;flex-direction:column}
+.scroll{flex:1;overflow:auto}
+.sheet-wrap{max-width:1240px;margin:0 auto;padding:48px 48px 300px 84px}
+.page{width:100%;padding:0 0 120px 44px}
+.page[hidden]{display:none}
+.doc-title{display:block;font:700 39px/1.15 var(--ui);letter-spacing:-.025em;border:0;width:100%;outline:none;background:none;color:var(--ink);padding:0;margin:0 0 18px;resize:none;overflow:hidden}
+.doc-title::placeholder{color:#4A4F58}
+.doc-sub{display:none}
+.notes-head{font:700 39px/1.15 var(--ui);letter-spacing:-.025em;margin:0 0 4px}
+.notes-sub{color:var(--muted);font-size:13px;margin:0 0 22px;padding-bottom:18px;border-bottom:1px solid var(--line)}
+.notes-box{display:block;width:100%;border:0;resize:none;outline:none;background:none;font:15px/1.6 var(--ui);color:var(--ink);padding:0;min-height:40vh}
+.notes-box::placeholder{color:#4A4F58}
+.flash{animation:flash 1.4s ease-out}
+@keyframes flash{from{background:var(--accent-soft)}to{background:transparent}}
+
+.card{--c:var(--structure);position:relative;background:var(--canvas);border:1px solid var(--line);border-left:3px solid var(--c);border-radius:6px;padding:9px 12px 10px 11px;cursor:pointer;transition:box-shadow .15s,border-color .15s}
+.card:hover{border-color:var(--line-strong)}
+.card.active{border-color:var(--accent);border-left-color:var(--c);box-shadow:0 0 0 3px var(--accent-soft)}
+.card.resolved{opacity:.6}
+.card-head{display:flex;align-items:center;gap:7px;margin-bottom:5px}
+.card-head .k{display:none}
+.card-head b{font-size:12.5px;font-weight:700;color:var(--c)}
+.card-head .who{color:var(--faint);font-size:12px}
+.card-head .resolve{margin-left:auto;background:none;border:1px solid var(--line);border-radius:999px;color:var(--muted);font-size:11.5px;padding:2px 8px}
+.card-head .resolve:hover{border-color:var(--green);color:var(--green)}
+.card .quote{color:var(--muted);font-size:12px;margin:0 0 6px;padding-left:8px;border-left:2px solid var(--c);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card .md{color:var(--ink-2);font-size:13px}
+.card.english{--c:var(--english)}.card.missing{--c:var(--missing)}.card.fact{--c:var(--fact)}.card.question{--c:var(--question)}.card.structure{--c:var(--structure)}.card.draft{--c:var(--draft)}
+.card.draft{background:var(--accent-soft)}
+.card .draft-text{font-size:13px;line-height:1.5;color:var(--ink);white-space:pre-wrap;margin:0 0 8px}
+.card .row{display:flex;gap:6px}
+.card .row button{border:1px solid var(--accent);background:var(--accent);color:#0B1326;border-radius:6px;padding:4px 10px;font-size:12px;font-weight:500}
+.card .row button.ghost{background:none;color:var(--accent-ink)}
+.rail-empty{color:var(--faint);font-size:12.5px;line-height:1.5;padding:4px 0}
+
+/* ---------- editor ---------- */
+.editor{position:relative}
+.editor .ProseMirror{outline:none;font:16px/1.65 var(--ui);color:var(--ink);caret-color:var(--accent);word-break:break-word;min-height:50vh}
+.ProseMirror>*{margin:0;padding:4px 2px}
+.ProseMirror>*+*{margin-top:2px}
+.ProseMirror p{margin:0}
+.ProseMirror h2{position:relative;font:700 25px/1.25 var(--ui);letter-spacing:-.02em;margin-top:1.5em!important;color:var(--ink)}
+.ProseMirror>h2:first-child{margin-top:0!important}
+.ProseMirror h2.current-section::after{content:"";position:absolute;left:-18px;top:8px;bottom:8px;width:2px;border-radius:2px;background:var(--accent)}
+.ProseMirror h1{position:relative;font:700 25px/1.25 var(--ui);letter-spacing:-.02em;margin-top:1.5em!important;color:var(--ink)}
+.ProseMirror>h1:first-child{margin-top:0!important}
+.ProseMirror h1.current-section::after{content:"";position:absolute;left:-18px;top:8px;bottom:8px;width:2px;border-radius:2px;background:var(--accent)}
+.ProseMirror h3{font:600 20px/1.35 var(--ui);letter-spacing:-.01em;margin-top:1.1em!important;color:var(--ink)}
+.ProseMirror h4,.ProseMirror h5,.ProseMirror h6{font:600 16px/1.4 var(--ui);margin-top:.9em!important;color:var(--ink)}
+.ProseMirror strong{font-weight:600}
+.ProseMirror ul,.ProseMirror ol{padding-left:1.6em;margin:0}
+.ProseMirror li{padding:1px 0;margin:0}
+.ProseMirror li p{padding:2px 0;margin:0}
+.ProseMirror li::marker{color:var(--ink-2)}
+.ProseMirror blockquote{margin:0;padding:3px 0 3px 14px;border-left:3px solid var(--line-strong);color:var(--ink-2);font-style:italic}
+.ProseMirror blockquote p{padding:0}
+.ProseMirror code{font:.86em/1.4 var(--mono);background:#2B2F36;border-radius:4px;padding:.12em .36em;color:#F2A3A3}
+.ProseMirror pre{background:#121316;border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow-x:auto;margin:6px 0}
+.ProseMirror pre code{background:none;border:0;padding:0;color:var(--ink);font-size:13px;line-height:1.6;font-family:var(--mono)}
+.ProseMirror hr{border:0;border-top:1px solid var(--line);margin:10px 0;padding:0}
+.ProseMirror hr.ProseMirror-selectednode{border-top-color:var(--accent)}
+.ProseMirror a{color:var(--accent-ink);text-decoration:underline;text-underline-offset:3px}
+.ProseMirror ul[data-type="taskList"]{list-style:none;padding-left:0}
+.ProseMirror ul[data-type="taskList"] li{display:flex;gap:10px;align-items:flex-start}
+.ProseMirror ul[data-type="taskList"] li>label{flex:none;margin-top:5px;user-select:none}
+.ProseMirror ul[data-type="taskList"] li>div{flex:1}
+.ProseMirror ul[data-type="taskList"] input{appearance:none;width:15px;height:15px;margin:0;border:1.5px solid var(--line-strong);border-radius:4px;display:grid;place-content:center;cursor:pointer;background:var(--paper)}
+.ProseMirror ul[data-type="taskList"] input:checked{background:var(--accent);border-color:var(--accent)}
+.ProseMirror ul[data-type="taskList"] input:checked::after{content:"";width:7px;height:4px;border:2px solid #0B1326;border-top:0;border-right:0;transform:rotate(-45deg) translate(1px,-1px)}
+.ProseMirror li[data-checked="true"]>div{color:var(--faint);text-decoration:line-through}
+.ProseMirror .tableWrapper{overflow-x:auto;margin:6px 0;padding:0}
+.ProseMirror table{border-collapse:collapse;width:100%;font:13.5px/1.5 var(--ui);table-layout:fixed}
+.ProseMirror th,.ProseMirror td{border:1px solid var(--line);padding:7px 9px;vertical-align:top;position:relative}
+.ProseMirror th{background:var(--panel);font-weight:600;text-align:left}
+.ProseMirror td p,.ProseMirror th p{padding:0}
+.ProseMirror .selectedCell::after{content:"";position:absolute;inset:0;background:var(--accent-soft);opacity:.7;pointer-events:none}
+.ProseMirror .is-empty::before{content:attr(data-placeholder);float:left;height:0;pointer-events:none;color:#434852}
+.ProseMirror h2.current-section+.is-empty::before,.ProseMirror .is-empty.has-cursor::before{color:#6A7079}
+.ProseMirror-selectednode{outline:0;background:var(--accent-soft);border-radius:4px}
+.ProseMirror li.ProseMirror-selectednode{background:var(--accent-soft)}
+mark.c-mark{color:inherit;border-radius:2px;padding:1px 0;border-bottom:2px solid var(--structure);background:var(--structure-bg);cursor:pointer;transition:background .15s;animation:ink .6s cubic-bezier(.2,.8,.2,1) both}
+@keyframes ink{from{background-size:0 100%;border-bottom-color:transparent;clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
+.card{animation:land .35s cubic-bezier(.2,.8,.2,1) both}
+@keyframes land{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+mark.c-mark[data-kind="english"]{background:none;border-bottom:0;text-decoration:underline wavy var(--english);text-decoration-skip-ink:none;text-underline-offset:4px}
+mark.c-mark[data-kind="missing"]{background:var(--missing-bg);border-color:var(--missing)}
+mark.c-mark[data-kind="fact"]{background:var(--fact-bg);border-color:var(--fact)}
+mark.c-mark[data-kind="question"]{background:var(--question-bg);border-color:var(--question)}
+mark.c-mark.active{box-shadow:0 0 0 2px var(--accent-soft);filter:saturate(1.4)}
+.hljs-keyword,.hljs-built_in,.hljs-selector-tag{color:#C586C0}
+.hljs-string,.hljs-regexp,.hljs-addition{color:#CE9178}
+.hljs-number,.hljs-literal,.hljs-symbol{color:#B5CEA8}
+.hljs-comment,.hljs-quote{color:#6A9955;font-style:italic}
+.hljs-title,.hljs-section,.hljs-function .hljs-title{color:#DCDCAA}
+.hljs-attr,.hljs-attribute,.hljs-property,.hljs-variable,.hljs-template-variable{color:#9CDCFE}
+.hljs-type,.hljs-class .hljs-title,.hljs-deletion{color:#4EC9B0}
+.hljs-meta,.hljs-tag,.hljs-name{color:#569CD6}
+
+/* audience, under the title */
+.aud{display:flex;flex-wrap:wrap;gap:6px 18px;margin:-6px 0 22px;font-size:13px;color:var(--muted)}
+.aud label{display:inline-flex;align-items:baseline;gap:6px}
+.aud input{border:0;border-bottom:1px dashed var(--line-strong);background:none;color:var(--ink);font:inherit;padding:1px 2px;min-width:190px;outline:none}
+.aud input:focus{border-bottom-color:var(--accent)}
+.aud input::placeholder{color:var(--faint)}
+.brief-toggle{background:none;border:0;color:var(--accent-ink);font:inherit;font-size:12.5px;padding:0;cursor:pointer}
+.brief{display:grid;grid-template-columns:1fr 1fr;gap:6px 18px;margin:-10px 0 22px;font-size:13px;color:var(--muted)}
+.brief[hidden]{display:none}
+.brief label{display:flex;flex-direction:column;gap:2px}
+.brief input{border:0;border-bottom:1px dashed var(--line-strong);background:none;color:var(--ink);font:inherit;padding:1px 2px;outline:none}
+.brief input:focus{border-bottom-color:var(--accent)}
+.brief input::placeholder{color:var(--faint)}
+.card-head .persona{font-size:11.5px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:0 7px}
+.pop.rubric{width:420px}
+.rubric-table{display:grid;grid-template-columns:auto auto 1fr;gap:4px 10px;font-size:12.5px;align-items:baseline;margin-top:6px}
+.rubric-table b{font-variant-numeric:tabular-nums}
+.rubric-table .lo{color:var(--fact)}.rubric-table .hi{color:var(--green)}
+.rubric-table small{color:var(--muted)}
+.verdict{font-weight:700}
+.verdict.ship{color:var(--green)}.verdict.revise{color:var(--missing)}
+.router .q{display:flex;flex-direction:column;gap:8px}
+.router .q p{margin:0;font-size:14px;color:var(--ink)}
+.router .q .ans{display:flex;gap:8px}
+.router .result{font-size:14px;color:var(--ink);line-height:1.6}
+/* heading badge: the only coach element that lives in the text */
+.coach-inline{display:inline;user-select:none;-webkit-user-select:none}
+.hbadge{display:inline-flex;align-items:center;gap:5px;vertical-align:middle;margin-left:12px;padding:2px 8px 2px 6px;border-radius:999px;border:1px solid var(--line);background:var(--panel);font:600 11.5px/1.4 var(--ui);letter-spacing:0;color:var(--muted);cursor:pointer;opacity:.75;transition:opacity .15s,border-color .15s}
+.hbadge:hover{opacity:1;border-color:var(--line-strong)}
+.hbadge i{width:8px;height:8px;border-radius:50%;border:1.5px solid var(--faint);display:inline-block}
+.hbadge.drafted i{background:var(--accent);border-color:var(--accent)}
+.hbadge.needs i{background:var(--missing);border-color:var(--missing)}
+.hbadge.ready i{background:var(--green);border-color:var(--green)}
+.hbadge.needs{color:var(--missing)}.hbadge.ready{color:var(--green)}
+.hbadge .n{color:var(--ink)}
+/* section popover */
+.pop.section{width:380px}
+.pop .goal{color:var(--ink-2);margin:0 0 8px}
+.pop .checks{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px}
+.check{display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:2px 8px 2px 6px;border-radius:999px;border:1px solid var(--line);color:var(--muted);background:var(--canvas);cursor:default}
+.check i{width:12px;height:12px;border-radius:50%;display:inline-grid;place-items:center;font-size:9px;font-style:normal;border:1px solid var(--line-strong);color:transparent}
+.check.pass{color:var(--ink);border-color:#1F4A38}.check.pass i{background:var(--green);border-color:var(--green);color:#0B1326}
+.check.partial{color:var(--ink);border-color:#4A3C14}.check.partial i{background:var(--missing);border-color:var(--missing);color:#0B1326}
+.check.fail{color:var(--ink);border-color:#5A2A33}.check.fail i{background:var(--fact);border-color:var(--fact);color:#0B1326}
+.pop .notes{display:flex;flex-direction:column;gap:6px;max-height:40vh;overflow:auto;margin:4px 0 2px}
+.pop .notes .card{padding:8px 10px 8px 9px;animation:none}
+.pop .pill{font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--raise);color:var(--muted);white-space:nowrap;margin-left:auto}
+.pop.ready .pill{background:#123326;color:var(--green)}
+.pop.needs .pill{background:#3A2F12;color:var(--missing)}
+.pop.drafted .pill{background:var(--accent-soft);color:var(--accent-ink)}
+.pop .go{border:1px solid var(--line-strong);background:none;color:var(--accent-ink);border-radius:6px;padding:4px 10px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap}
+.pop .go:hover{background:var(--accent-soft)}
+.toc-item.ready .tick{background:var(--green)}
+.toc-item.needs .tick{background:var(--missing)}
+/* suggestion popover (hover a highlight) */
+.pop{position:fixed;z-index:45;width:320px;background:var(--panel);border:1px solid var(--line-strong);border-radius:10px;padding:10px 12px;box-shadow:0 14px 36px -12px #000d;font-size:13px}
+.pop[hidden]{display:none}
+.pop .card-head{margin-bottom:6px}
+.pop .sw{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin:0 0 6px}
+.pop .sw s{color:var(--muted);text-decoration-color:var(--fact)}
+.pop .sw b{color:var(--ink);font-weight:600;background:var(--accent-soft);border-radius:4px;padding:1px 5px}
+.pop{font-family:var(--ui)}
+.pop .md{color:var(--ink-2)}
+.pop .row{display:flex;gap:6px;margin-top:8px}
+.pop .row button,.card .row button.accept{border:1px solid var(--accent);background:var(--accent);color:#0B1326;border-radius:6px;padding:4px 10px;font-size:12px;font-weight:500}
+.pop .row button.ghost{background:none;color:var(--ink-2);border-color:var(--line-strong)}
+.card .sw{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin:0 0 6px;font-size:13px}
+.card .sw s{color:var(--muted);text-decoration-color:var(--fact)}
+.card .sw b{color:var(--ink);font-weight:600;background:var(--accent-soft);border-radius:4px;padding:1px 5px}
+.sev{margin-left:auto;font-size:11px;color:var(--faint)}
+.sev.high{color:var(--fact)}
+.card-head .resolve{margin-left:0}
+.card-head .right{margin-left:auto;display:flex;align-items:center;gap:6px}
+.verify{color:var(--muted);font-size:12px}
+/* guide view */
+.guide .md{font-size:15px;line-height:1.65;color:var(--ink-2)}
+.guide .md h4{font:600 19px/1.3 var(--ui);color:var(--ink);margin:28px 0 8px}
+.guide .md p{margin:0 0 12px}
+.guide .md ul,.guide .md ol{margin:0 0 12px;padding-left:22px}
+.guide .md li{margin:4px 0}
+/* context files */
+.dd-menu.ctx{min-width:360px;padding:10px 12px 12px}
+.dd-menu.ctx h3{margin:0;font-size:13px;font-weight:700;color:var(--ink)}
+.context-head{display:flex;align-items:center;gap:8px}
+.context-head label{margin-left:auto;font-size:12px;color:var(--accent-ink);cursor:pointer}
+.context-head input{display:none}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.chip{display:inline-flex;align-items:center;gap:6px;max-width:100%;background:var(--canvas);border:1px solid var(--line);border-radius:999px;padding:3px 6px 3px 9px;font-size:12px;color:var(--ink-2)}
+.chip .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px}
+.chip small{color:var(--faint)}
+.chip button{border:0;background:none;color:var(--faint);padding:0 2px;font-size:13px;line-height:1}
+.chip button:hover{color:var(--fact)}
+.chip.bad{border-color:#5a2a33}
+.context-empty{font-size:12px;color:var(--faint);margin-top:6px;line-height:1.5}
+.desk.drop{outline:2px dashed var(--accent);outline-offset:-8px}
+
+/* block handle, menus, toolbar */
+.handle{position:absolute;display:flex;align-items:center;gap:1px;height:24px;z-index:5}
+.handle[hidden]{display:none}
+.handle button{background:none;border:0;border-radius:4px;color:#5F6570;height:24px;padding:0;display:grid;place-items:center}
+.handle button:hover{background:var(--hover);color:var(--muted)}
+.handle .plus{width:22px;font-size:18px;line-height:1}
+.handle .grip{width:18px;font-size:12px;letter-spacing:-2px;cursor:grab}
+.handle .grip:active{cursor:grabbing}
+.bubble{position:fixed;display:flex;flex-direction:column;gap:3px;padding:3px;background:var(--panel);border:1px solid var(--line-strong);border-radius:8px;box-shadow:0 10px 28px -8px #000c;z-index:40}
+.bubble[hidden]{display:none}
+.bubble-row{display:flex;gap:1px}
+.bubble button{background:none;border:0;color:var(--ink-2);font-size:13px;padding:4px 8px;border-radius:5px;min-width:28px}
+.bubble button:hover{background:var(--hover)}
+.bubble button.on{color:var(--accent-ink);background:var(--accent-soft)}
+.bubble .b-ask{color:var(--accent-ink);font-weight:500;border-right:1px solid var(--line);border-radius:5px 0 0 5px;margin-right:3px;padding-right:9px}
+.bubble .b-turn{font-weight:500;border-right:1px solid var(--line);border-radius:0;margin-right:3px;padding-right:9px}
+.bubble .b-bold{font-weight:700}.bubble .b-italic{font-style:italic}.bubble .b-underline{text-decoration:underline}.bubble .b-strike{text-decoration:line-through}.bubble .b-code{font-family:var(--mono);font-size:12px}
+.bubble-link{display:flex;gap:4px;padding:2px}
+.bubble-link[hidden]{display:none}
+.bubble-link input{flex:1;min-width:240px;background:var(--paper);border:1px solid var(--line-strong);border-radius:5px;padding:4px 8px;font-size:13px;color:var(--ink);outline:none}
+.bubble-link input:focus{border-color:var(--accent)}
+.slash{position:fixed;z-index:50;width:300px;max-height:360px;overflow:auto;padding:6px;background:var(--panel);border:1px solid var(--line-strong);border-radius:10px;box-shadow:0 16px 40px -12px #000d}
+.slash-head{font-size:12px;color:var(--muted);padding:4px 8px 6px}
+.slash-sep{height:1px;background:var(--line);margin:4px 2px}
+.slash-item{display:flex;align-items:center;gap:10px;width:100%;background:none;border:0;color:var(--ink);padding:5px 8px;border-radius:6px;text-align:left}
+.slash-item.on,.slash-item:hover{background:var(--hover)}
+.slash-item.small{padding:6px 8px}
+.slash-item.small .slash-text b{font-weight:400}
+.slash-icon{flex:none;width:34px;height:34px;display:grid;place-items:center;background:var(--raise);border:1px solid var(--line-strong);border-radius:6px;font:600 12px var(--ui);font-style:normal;color:var(--ink)}
+.slash-text{flex:1;min-width:0}
+.slash-text b{display:block;font-weight:500;font-size:13.5px}
+.slash-text small{display:block;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.slash-item kbd{font:12px var(--mono);color:var(--faint)}
+.slash-empty{padding:8px 10px;color:var(--muted);font-size:13px}
+
+@media (max-width:1280px){.sheet-wrap{padding-left:64px}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<header class="bar" data-tauri-drag-region>
+  <button type="button" class="brand" id="home" title="Workspace"><i aria-hidden="true"></i>Margin</button>
+  <span class="crumb">/</span>
+  <button type="button" class="tool ws-crumb" id="ws-crumb" title="Open the workspace"></button>
+  <span class="crumb">/</span>
+  <span class="pick"><select id="template" aria-label="Document type"></select></span>
+  <div class="views" role="tablist">
+    <button type="button" role="tab" data-view="doc">Document</button>
+    <button type="button" role="tab" data-view="notes">Notes<span class="n" id="notes-n"></span></button>
+    <button type="button" role="tab" data-view="guide">Guide</button>
+  </div>
+  <span class="spacer" data-tauri-drag-region></span>
+  <span class="saved" id="saved"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><circle cx="6" cy="6" r="5.5" stroke="currentColor"/><path d="M3.5 6.2l1.8 1.8 3.2-3.6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>Changes saved</span>
+  <button type="button" class="tool" id="focus-btn" title="Hide the coach and the bars (⌘\)">Focus</button>
+  <details class="dd" id="context">
+    <summary class="tool" id="context-btn">+ Context</summary>
+    <div class="dd-menu ctx">
+      <div class="context-head"><h3>Context files</h3><label>+ Add files<input type="file" id="files" multiple accept=".txt,.md,.markdown,.csv,.json,.yaml,.yml,.toml,.log,.xml,.html,.pdf,image/*,text/*,.js,.ts,.py,.rs,.go,.java,.rb,.sh,.sql"></label></div>
+      <div class="chips" id="chips"></div>
+    </div>
+  </details>
+  <details class="dd" id="export">
+    <summary class="tool">Export</summary>
+    <div class="dd-menu">
+      <button type="button" id="copy">Copy as Markdown</button>
+      <button type="button" id="download">Save as .md to Downloads</button>
+    </div>
+  </details>
+  <button type="button" class="btn primary" id="review-all">Review document</button>
+  <button type="button" class="tool" id="new">New</button>
+  <button type="button" class="tool" id="settings-btn" title="Settings">⚙</button>
+</header>
+
+<div class="pop" id="pop" hidden></div>
+<div class="modal" id="import" hidden></div>
+<main class="app">
+  <nav id="toc" class="toc" aria-label="Sections"></nav>
+  <section class="desk" id="desk">
+    <div class="scroll" id="scroll">
+      <div class="sheet-wrap">
+        <section id="library" class="library" hidden></section>
+        <section id="settings" class="library settings" hidden></section>
+        <article id="paper" class="page"></article>
+        <section id="notes" class="page" hidden></section>
+        <section id="guide" class="page guide" hidden></section>
+      </div>
+    </div>
+  </section>
+  <section class="dock" id="coach" aria-label="Coach">
+    <div class="thread" id="thread" hidden>
+      <div class="thread-head"><span class="coach-name">✦ Coach</span><span class="dock-line" id="dock-line"></span><button type="button" class="tool small" id="thread-hide">Hide</button></div>
+      <div id="log" class="log" aria-live="polite"></div>
+    </div>
+    <form id="ask" class="ask">
+      <div class="ask-row">
+        <div class="modes">
+          <button type="button" data-mode="interview">Interview</button>
+          <button type="button" data-mode="review">Review</button>
+        </div>
+        <div id="actions" class="actions"></div>
+        <button type="button" class="tool small" id="thread-show" title="Show the conversation">Conversation</button>
+      </div>
+      <div class="composer">
+        <textarea id="input" rows="1" placeholder="Ask the coach in any English…" aria-label="Message to coach"></textarea>
+        <button type="submit" id="send" class="send" aria-label="Send">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 13V3M8 3L3.5 7.5M8 3l4.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+    </form>
+  </section>
+  <footer class="status" id="status"></footer>
+</main>
+<div id="lessons-box" hidden><span id="lessons-n"></span><div id="lessons"></div></div>
+</main>
+
+<script>
+const S = (title, hint, checks) => ({ title, hint, checks });
+const TEMPLATES = {
+  onepager: { name: 'One-pager', readers: ['Skeptical VP', 'Finance / capacity owner', 'Staff peer'], sections: [
+    S('TL;DR', 'The ask, the cost and the payoff in three lines.', 'the ask is explicit, cost and payoff named, fits in three lines'),
+    S('Problem', 'Who hurts, how much, with evidence.', 'who is affected, numbers with sources, why it matters to the reader'),
+    S('Why now', 'The cost of waiting one more quarter.', 'cost of inaction stated with a number or a date'),
+    S('Proposal', 'The direction, not the design.', 'one clear direction, scope bounded, not a design'),
+    S('Options', 'Do nothing / A / B on the same four or five criteria.', 'do-nothing included, same criteria for every option, the reason each loser lost'),
+    S('Cost and payoff', 'People, time, money, risk reduced.', 'people and time estimated, money estimated, risk reduction stated'),
+    S('Risks', 'The top three, each with a mitigation.', 'top risks named, mitigation for each, residual risk honest'),
+    S('Ask', 'The decision, its owner and the date.', 'decision named, owner named, date named'),
+  ]},
+  design: { name: 'Design doc', readers: ['Staff peer', 'On-call SRE', 'Implementing engineer'], sections: [
+    S('Context and problem', 'What is broken or missing today? Who feels it? Add one number.', 'clear problem, who is affected, evidence with numbers, why now'),
+    S('Goals and non-goals', 'When this is done, what will be true? What will you not do?', 'measurable goals, explicit non-goals, success metrics'),
+    S('Proposed design', 'How does it work end to end? Components, data flow, APIs, data model.', 'end-to-end flow, interfaces, data model, scale and limits'),
+    S('Alternatives considered', 'What else could work, including doing nothing? Why did each lose?', 'at least two real alternatives incl. doing nothing, the reason each lost'),
+    S('Failure modes', 'What breaks, what the user sees, how you detect it, how you mitigate it.', 'failure modes listed, impact and detection for each, mitigation for each'),
+    S('Operational readiness', 'SLOs, alerts, dashboards, runbook, rollback.', 'SLOs stated, alerts and dashboards named, rollback described'),
+    S('Migration and rollout', 'Phases, gates, backfill, kill switch.', 'phased rollout, gates between phases, kill switch or rollback'),
+    S('Security, privacy and cost', 'What data, who can reach it, what it costs at 3x volume.', 'data and access covered, cost estimated, growth considered'),
+    S('Open questions', 'What is not decided, who owns the answer, by when.', 'each question has an owner and a date'),
+  ]},
+  rfc: { name: 'RFC', readers: ['Dependent team lead', 'Staff peer', 'Implementing engineer'], sections: [
+    S('Summary', 'One paragraph: what you propose and why.', 'readable alone, one clear ask'),
+    S('Motivation', 'The cross-team problem and who it affects.', 'real problem, evidence, who benefits'),
+    S('Proposal', 'The standard or change, precise enough to implement. Examples help.', 'precise, examples, edge cases, compatibility'),
+    S('Impact by team', 'Team, change required, effort, owner.', 'every affected team listed, effort estimated, owner named'),
+    S('Alternatives and prior art', 'Other ways to solve it, and doing nothing.', 'real alternatives, tradeoffs, prior art acknowledged'),
+    S('Compatibility and migration', 'What breaks, how users move, how long the old way stays.', 'breaking changes named, migration path, deprecation timeline'),
+    S('Unresolved questions', 'What reviewers should decide.', 'open questions listed with owners'),
+  ]},
+  adr: { name: 'ADR', readers: ['Future maintainer', 'Staff peer'], sections: [
+    S('Status', 'Proposed, accepted, deprecated or superseded. Add the date and the deciders.', 'status and date present, deciders named'),
+    S('Context', 'The forces at play, in three to six sentences.', 'neutral facts, constraints, why a decision is needed now'),
+    S('Decision', 'We will … (one clear sentence, then why).', 'one clear decision in active voice, reasoning linked to context'),
+    S('Options considered', 'Two to four options, one line of pros and cons each.', 'at least two options, fair pros and cons'),
+    S('Consequences', 'What becomes easier, what becomes harder, what this blocks later.', 'positive and negative consequences, follow-up work'),
+    S('Revisit when', 'The trigger that reopens this decision.', 'a concrete trigger named'),
+  ]},
+  prfaq: { name: 'PRFAQ', readers: ['Skeptical VP', 'Finance / capacity owner', 'Dependent team lead'], sections: [
+    S('Press release', 'Headline, customer problem, solution, a quote, the call to action.', 'customer problem concrete, solution clear, call to action present'),
+    S('External FAQ', 'What customers will ask.', 'hard customer questions answered honestly'),
+    S('Internal FAQ', 'Cost, staffing, dependencies, risks, metrics, why us, why now.', 'cost and staffing estimated, dependencies named, metrics defined, why now answered'),
+  ]},
+  strategy: { name: 'Tech strategy', readers: ['Skeptical VP', 'Staff peer', 'Dependent team lead'], sections: [
+    S('Diagnosis', 'The core challenge, with evidence.', 'one core challenge, evidence with numbers'),
+    S('Guiding policies', 'Three to five rules that resolve trade-offs.', 'policies resolve real trade-offs, not slogans'),
+    S('Coherent actions', 'Initiatives mapped to policies, sequenced.', 'each action maps to a policy, sequence stated'),
+    S('What we will stop doing', 'The things this strategy ends.', 'at least one thing stopped'),
+    S('Measures', 'Leading and lagging indicators.', 'leading and lagging indicators named'),
+  ]},
+  incident: { name: 'Incident postmortem', readers: ['On-call SRE', 'Skeptical VP', 'Future maintainer'], sections: [
+    S('Summary', 'Impact, duration, severity, detection source, in two or three sentences.', 'what, when, how long, how bad, how it was detected'),
+    S('Impact', 'Users, orders, money, SLO budget burned.', 'numbers for users, duration, money or SLA'),
+    S('Timeline', 'Times with time zone: detection, actions, recovery. Systems, not people.', 'time zone, detection time, mitigation time, resolution time'),
+    S('Root causes and contributing factors', 'Why did it happen? Keep asking why.', 'technical root cause, contributing factors, blameless language'),
+    S('What went well and what did not', 'Detection, response, tools, communication, where you got lucky.', 'honest and blameless, specific'),
+    S('Action items', 'Each: action, type (prevent / detect / mitigate), owner, due date, ticket.', 'each action has an owner and a date, actions address the root cause'),
+  ]},
+  orr: { name: 'Launch readiness (ORR)', readers: ['On-call SRE', 'Dependent team lead', 'Staff peer'], sections: [
+    S('Scope and blast radius', 'What changes, who it can hurt, how far a failure spreads.', 'scope bounded, blast radius stated'),
+    S('Readiness checklist', 'SLOs, alerts, dashboards, runbooks, on-call, load test, rollback tested, dependency capacity.', 'every item has a status and an owner'),
+    S('Failure modes', 'Top failure modes with impact, detection and mitigation.', 'top failure modes listed with detection and mitigation'),
+    S('Go / no-go', 'Criteria and sign-offs.', 'criteria measurable, sign-offs named'),
+  ]},
+  runbook: { name: 'Runbook', readers: ['On-call SRE', 'Implementing engineer'], sections: [
+    S('What this alert means', 'One sentence.', 'one sentence, no prose'),
+    S('Impact if ignored', 'What gets worse and how fast.', 'impact concrete'),
+    S('Diagnose', 'Numbered commands and dashboard links, with expected output.', 'numbered steps, exact commands, expected output'),
+    S('Mitigate', 'Numbered steps, safest first.', 'numbered steps, safest first, how to verify it worked'),
+    S('Escalate', 'Who, when, how.', 'who, when and how are explicit'),
+  ]},
+  status: { name: 'Status update', readers: ['Skeptical VP', 'Dependent team lead'], sections: [
+    S('Progress', 'What shipped since last time, with evidence.', 'concrete progress, numbers where possible'),
+    S('Risks', 'What could slip and why.', 'risks named with likelihood and impact'),
+    S('Asks', 'What you need, from whom, by when.', 'each ask has an owner and a date'),
+  ]},
+  blog: { name: 'Blog post', readers: ['Staff peer', 'Implementing engineer'], sections: [
+    S('Hook', 'The first two lines. Why should an engineer keep reading?', 'specific, interesting, no generic opening'),
+    S('The problem', 'What problem did you face? Make it concrete.', 'concrete situation, stakes'),
+    S('What we did', 'The solution, with enough detail to learn from.', 'technical depth, examples or code, diagrams if needed'),
+    S('What we learned', 'Results and lessons. Numbers if you have them.', 'results with numbers, honest lessons including mistakes'),
+    S('Takeaway', 'One thing the reader should remember.', 'one clear takeaway'),
+  ]},
+  linkedin: { name: 'LinkedIn post', readers: ['Staff peer'], sections: [
+    S('Hook line', 'One line that makes people stop scrolling.', 'short, specific, no clickbait'),
+    S('Story', 'What happened? Short paragraphs.', 'concrete, personal, short lines'),
+    S('Lesson', 'What did you learn that others can use?', 'useful, not bragging'),
+    S('Question for readers', 'End with a question people want to answer.', 'genuine question'),
+  ]},
+  thread: { name: 'X thread', readers: ['Staff peer'], sections: [
+    S('First post', 'The hook, under 280 characters.', 'under 280 characters, strong hook'),
+    S('Thread body', 'One idea per post. Separate posts with a blank line.', 'each post under 280 characters, one idea each'),
+    S('Last post', 'Summary and a link or call to action.', 'clear ending'),
+  ]},
+};
+const PERSONAS = {
+  'Skeptical VP': 'attacks the business case, cost, opportunity cost and the clarity of the ask; asks "What do I lose if I say no?"',
+  'Staff peer': 'attacks technical soundness, alternatives and hidden coupling; asks "Why not the simpler option?"',
+  'On-call SRE': 'attacks failure modes, observability, rollback and blast radius; asks "What wakes me up at 3 a.m., and how do I undo it?"',
+  'Implementing engineer': 'attacks ambiguity, missing interfaces and sequencing; asks "What exactly do I build first?"',
+  'Finance / capacity owner': 'attacks headcount, infrastructure cost and the ROI math; asks "Show me the cost curve at 3x volume."',
+  'Future maintainer': 'attacks missing context, unstated assumptions and rationale; asks "Why did they do this, and when should I undo it?"',
+  'Dependent team lead': 'attacks the impact on their roadmap and contract changes; asks "What does this cost my team and when?"',
+};
+const RUBRIC = ['bottom line', 'evidence', 'options', 'risk honesty', 'audience fit', 'structure', 'economy', 'actionability'];
+const DEFAULT_STYLE = `STYLE RULES
+1. Active voice. Name the actor: "the service retries the call", not "the call is retried".
+2. One idea per sentence. Sentences under 25 words. Paragraphs of three sentences or fewer.
+3. Lead with the point. The first sentence of the document and of every section states the conclusion.
+4. No filler: "it is important to note", "in order to", "basically", "leverage", "robust", "seamless", "various", "utilize".
+5. No vision language: "north star", "world-class", "best-in-class", "transformational", "paradigm", "journey".
+6. Numbers over adjectives: "p99 drops from 840 ms to 210 ms", not "much faster".
+7. Headings are claims, not labels.
+8. Tables for options and comparisons; diagrams for flows and architecture; prose for reasoning.
+9. Define every acronym on first use, except the reader's daily vocabulary.
+10. Say "we will" for decisions, "we propose" for asks, "we do not know" for unknowns.`;
+const NOTES = 'Notes';
+const LAST = 'docu-coach-last';
+const inApp = !!window.__TAURI__;
+const invoke = (cmd, args) => window.__TAURI__.core.invoke(cmd, args);
+// Documents live on disk in the app (one folder each). In a plain browser (UI work) they live in localStorage.
+const store = inApp ? {
+  list: () => invoke('docs_list'),
+  create: title => invoke('doc_create', { title }),
+  load: id => invoke('doc_load', { id }).then(JSON.parse),
+  save: (id, obj, markdown) => invoke('doc_save', { id, json: JSON.stringify(obj), markdown }),
+  remove: id => invoke('doc_delete', { id }),
+  ws: { info: () => invoke('ws_info'), use: (path, name) => invoke('ws_use', { path, name: name || null }), forget: path => invoke('ws_forget', { path }) },
+  reveal: (id, sub) => invoke('reveal', { id: id || null, sub: sub || null }),
+  asset: (id, name, data) => invoke('asset_save', { id, name, data }),
+  diagrams: { list: () => invoke('diagrams_list'), save: (name, svg, scene) => invoke('diagram_save', { name, svg, scene }), load: name => invoke('diagram_load', { name }), remove: name => invoke('diagram_delete', { name }) },
+  library: { load: () => invoke('library_load').then(JSON.parse), save: items => invoke('library_save', { json: JSON.stringify(items) }) },
+  settings: { get: () => invoke('settings_get'), set: value => invoke('settings_set', { value }) },
+  style: { get: () => invoke('style_get'), set: text => invoke('style_set', { text }) },
+  files: { list: () => invoke('files_list'), add: (name, data) => invoke('file_add', { name, data }), read: name => invoke('file_read', { name }), remove: name => invoke('file_delete', { name }) },
+  confluence: (url, email, token) => invoke('confluence_fetch', { url, email, token }),
+} : {
+  _index: () => JSON.parse(localStorage.getItem('docu-coach-index') || '[]'),
+  list: async function () { return this._index().map(id => { const d = JSON.parse(localStorage.getItem('docu-coach-doc:' + id) || '{}'); return { ...(d.meta || {}), id, title: d.title, templateId: d.templateId }; }).sort((a, b) => (b.updated || 0) - (a.updated || 0)); },
+  create: async function (title) { const base = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'document'; let id = base, n = 2; const idx = this._index(); while (idx.includes(id)) id = `${base}-${n++}`; localStorage.setItem('docu-coach-index', JSON.stringify([...idx, id])); return id; },
+  load: async id => { const t = localStorage.getItem('docu-coach-doc:' + id); if (!t) throw new Error('not found'); return JSON.parse(t); },
+  save: async (id, obj) => localStorage.setItem('docu-coach-doc:' + id, JSON.stringify(obj)),
+  remove: async function (id) { localStorage.removeItem('docu-coach-doc:' + id); localStorage.setItem('docu-coach-index', JSON.stringify(this._index().filter(x => x !== id))); },
+  ws: { info: async () => ({ path: 'browser storage', name: 'Browser workspace', workspaces: [{ path: 'browser storage', name: 'Browser workspace', exists: true }] }), use: async () => { throw new Error('Only in the app.'); }, forget: async () => {} },
+  reveal: async () => {},
+  asset: async (id, name) => name,
+  diagrams: { _k: 'docu-coach-diagrams', list: async function () { return JSON.parse(localStorage.getItem(this._k) || '[]'); }, save: async function (name, svg, scene) { const l = (await this.list()).filter(d => d.name !== name); l.unshift({ name, svg, scene, updated: Date.now() }); localStorage.setItem(this._k, JSON.stringify(l)); return name; }, load: async function (name) { return (await this.list()).find(d => d.name === name); }, remove: async function (name) { localStorage.setItem(this._k, JSON.stringify((await this.list()).filter(d => d.name !== name))); } },
+  files: { _k: 'docu-coach-files', list: async function () { return JSON.parse(localStorage.getItem(this._k) || '[]').map(({ name, size, updated }) => ({ name, size, updated })); }, add: async function (name, data) { const l = JSON.parse(localStorage.getItem(this._k) || '[]').filter(f => f.name !== name); l.unshift({ name, data, size: Math.round(data.length * 3 / 4), updated: Date.now() }); localStorage.setItem(this._k, JSON.stringify(l)); return name; }, read: async function (name) { return (JSON.parse(localStorage.getItem(this._k) || '[]').find(f => f.name === name) || {}).data; }, remove: async function (name) { localStorage.setItem(this._k, JSON.stringify(JSON.parse(localStorage.getItem(this._k) || '[]').filter(f => f.name !== name))); } },
+  library: { load: async () => JSON.parse(localStorage.getItem('docu-coach-library') || '[]'), save: async items => localStorage.setItem('docu-coach-library', JSON.stringify(items)) },
+  style: { get: async () => localStorage.getItem('docu-coach-style') || '', set: async text => localStorage.setItem('docu-coach-style', text) },
+  settings: { get: async () => ({ agent: 'claude', command: '', args: '', model: 'claude-opus-5-5', effort: 'medium', skills: [], useMySettings: false, ...JSON.parse(localStorage.getItem('docu-coach-settings') || '{}') }), set: async function (v) { const cur = await this.get(); const next = { ...cur, ...v }; localStorage.setItem('docu-coach-settings', JSON.stringify(next)); return next; } },
+  confluence: async () => { throw new Error('Confluence import works in the app.'); },
+};
+
+const blank = () => ({ id: null, title: '', templateId: 'design', notes: '', docJson: null, current: null, mode: 'review', chat: [], comments: [], checks: {}, audience: '', purpose: '', brief: { ask: '', objection: '', deadline: '', numbers: '', nongoals: '' }, rubric: null, attachments: [], focus: false, threadOpen: false });
+let styleRules = '';
+let savedTimer, saveTimer, saving = false, dirty = false;
+function meta() {
+  const all = sections(), n = docWords();
+  return { words: n, sections: all.length, ready: all.filter(x => sectionStatus(x.title, x.words) === 'ready').length, open: state.comments.filter(c => !c.resolved).length, updated: Date.now() };
+}
+function save() {
+  if (!state.id) return;
+  dirty = true;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(flush, 500);
+}
+async function flush() {
+  if (!state.id || saving) return;
+  saving = true; dirty = false;
+  try {
+    const { attachments, ...rest } = state;
+    await store.save(state.id, { ...rest, attachments: attachments.map(a => ({ ...a })), meta: meta() }, toMarkdown());
+    const s = $('#saved'); if (s) { s.classList.add('show'); clearTimeout(savedTimer); savedTimer = setTimeout(() => s.classList.remove('show'), 1500); }
+  } catch (e) { console.error('save failed', e); }
+  saving = false;
+  if (dirty) flush();
+}
+window.addEventListener('beforeunload', () => { if (dirty) flush(); });
+let state = blank();
+let busy = false;
+
+const $ = s => document.querySelector(s);
+const el = (tag, props = {}) => Object.assign(document.createElement(tag), props);
+const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const words = t => (t.trim().match(/\S+/g) || []).length;
+const uid = () => Math.random().toString(36).slice(2, 9);
+const tpl = () => TEMPLATES[state.templateId] || TEMPLATES.design;
+let doc = null; // the editor (editor/main.js)
+const hintFor = () => ''; // hints live in the section spine, not in the text
+const tplSection = t => tpl().sections.find(s => s.title.toLowerCase() === (t || '').trim().toLowerCase());
+const tplHint = t => tplSection(t)?.hint || '';
+const tplChecks = t => (tplSection(t)?.checks || '').split(/,\s*/).filter(Boolean);
+const sections = () => doc ? doc.sections() : [];
+const titles = () => [NOTES, ...sections().map(s => s.title)];
+const notesBox = () => $('#notes-box');
+const grow = (ta, max = Infinity) => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, max) + 'px'; };
+const docWords = () => sections().reduce((n, s) => n + s.words, 0);
+const firstSection = () => titles()[1] || tpl().sections[0]?.title || NOTES;
+
+/* ---------- document ---------- */
+function showView(v) {
+  document.querySelectorAll('.views button').forEach(b => b.setAttribute('aria-pressed', b.dataset.view === v));
+  $('#library').hidden = v !== 'library';
+  $('#settings').hidden = v !== 'settings';
+  if (v === 'settings') renderSettings();
+  $('#paper').hidden = v !== 'doc';
+  $('#notes').hidden = v !== 'notes';
+  $('#guide').hidden = v !== 'guide';
+  document.querySelector('.app').classList.toggle('in-library', v === 'library' || v === 'settings');
+  if (v === 'library') renderLibrary();
+  if (v === 'guide' && !$('#guide').childElementCount) loadGuide();
+
+}
+function buildPaper() {
+  const p = $('#paper');
+  const title = el('textarea', { className: 'doc-title', id: 'title', rows: 1 });
+  title.setAttribute('aria-label', 'Document title');
+  title.oninput = () => { title.value = title.value.replace(/\n/g, ' '); state.title = title.value; grow(title); save(); };
+  title.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); title.blur(); doc.focusBody(); } };
+  const host = el('div', { className: 'editor' });
+  const aud = el('div', { className: 'aud' });
+  const mk = (key, label, ph) => { const l = el('label'); const i = el('input', { id: 'aud-' + key, placeholder: ph, value: state[key] || '' }); i.oninput = () => { state[key] = i.value; save(); }; l.append(el('span', { textContent: label }), i); return l; };
+  aud.append(mk('audience', 'For', 'who will read this, e.g. the platform team lead'), mk('purpose', 'so that they', 'approve the design / fix the outage / learn the trade-offs'));
+  const more = el('button', { type: 'button', className: 'brief-toggle', textContent: 'Brief ▾' });
+  const brief = el('div', { className: 'brief', hidden: true });
+  const bk = (key, label, ph) => { const l = el('label'); const i = el('input', { id: 'brief-' + key, placeholder: ph }); i.oninput = () => { (state.brief ||= {})[key] = i.value; save(); }; l.append(el('span', { textContent: label }), i); return l; };
+  brief.append(bk('ask', 'The ask', 'what you want approved, funded, adopted or known, in one sentence'), bk('objection', 'Their likely objection', 'the first pushback you expect'), bk('deadline', 'Decision by', 'date or event, and what happens if nobody decides'), bk('numbers', 'Known numbers', 'metrics, volumes, costs, latencies, with sources'), bk('nongoals', 'Non-goals', 'what this document will not address'));
+  more.onclick = () => { brief.hidden = !brief.hidden; more.textContent = brief.hidden ? 'Brief ▾' : 'Brief ▴'; };
+  aud.append(more);
+  p.append(title, aud, brief, el('p', { className: 'doc-sub', id: 'doc-sub' }), host);
+  p.onmousedown = e => { if (e.target === p) { e.preventDefault(); doc.editor.commands.focus('end'); } };
+
+  const ta = el('textarea', { className: 'notes-box', id: 'notes-box', placeholder: 'Rough notes, a messy draft, a Slack thread, bullet points…' });
+  ta.setAttribute('aria-label', NOTES);
+  ta.oninput = () => { state.notes = ta.value; grow(ta); save(); renderOutline(); };
+  ta.onfocus = () => setCurrent(NOTES);
+  $('#notes').append(el('h1', { className: 'notes-head', textContent: 'Notes' }),
+    el('p', { className: 'notes-sub', textContent: 'Anything goes here. It does not need to be good. The coach reads it and can sort it into sections.' }), ta);
+  document.querySelectorAll('.views button').forEach(b => b.onclick = () => { showView(b.dataset.view); if (b.dataset.view === 'notes') ta.focus(); else if (b.dataset.view === 'doc') setCurrent(doc.current() || firstSection()); });
+
+  doc = DocEditor.create({
+    element: host, content: state.docJson, hintFor,
+    onChange: () => { state.docJson = doc.json(); save(); renderOutline(); renderMeta(); scheduleComments(); },
+    onSelect: () => { const t = doc.current(); if (t && doc.editor.isFocused) setCurrent(t); const id = doc.editor.isFocused ? doc.commentAtCursor() : null; if (id) { if (id !== popId) showPop(id); } else if (popId && !String(popId).startsWith('section:') && !$('#pop').matches(':hover')) hidePop(); },
+    onAsk: text => { setFocus(false); setMode('review'); send(`In the "${state.current}" section, look at this part and tell me what to fix:\n\n"${text.trim()}"`); },
+    onCommentClick: id => { activate(id, false); showPop(id); },
+    onImage: (f, pos) => addImage(f, pos),
+    onDiagram: () => openDiagram(null, null),
+    onDiagramClick: (pos, scene) => openDiagram(pos, scene),
+  });
+  doc.setCoach(renderStrip);
+}
+function syncPaper() {
+  const title = $('#title');
+  title.value = state.title; title.placeholder = 'Untitled';
+  $('#aud-audience').value = state.audience || ''; $('#aud-purpose').value = state.purpose || '';
+  for (const k of ['ask', 'objection', 'deadline', 'numbers', 'nongoals']) $('#brief-' + k).value = (state.brief || {})[k] || '';
+  notesBox().value = state.notes;
+  requestAnimationFrame(() => { grow(title); grow(notesBox()); });
+}
+function renderMeta() {
+  const n = docWords(), all = sections(), open = state.comments.filter(c => !c.resolved).length;
+  const expected = tpl().sections.length, have = tpl().sections.filter(s => all.some(x => x.title.toLowerCase() === s.title.toLowerCase() && x.words)).length;
+  const pages = n ? Math.max(1, Math.round(n / 450 * 10) / 10) : 0, mins = n ? Math.max(1, Math.round(n / 220)) : 0;
+  const ready = all.filter(x => sectionStatus(x.title, x.words) === 'ready').length;
+  const rules = Object.keys(lessonsByRule()).length;
+  const last = state.lastReview ? ago(state.lastReview) : 'never';
+  $('#status').innerHTML =
+    `<span>Page <b>${pages ? pages.toFixed(pages % 1 ? 1 : 0) : '0'}</b></span><span><b>${n.toLocaleString()}</b> ${n === 1 ? 'word' : 'words'}</span><span><b>${mins || '–'}</b> min read</span>` +
+    `<span>Sections <b>${have}/${expected}</b> written, <b class="${all.length && ready === all.length ? 'ok' : ''}">${ready}</b> ready</span>` +
+    `<span class="${open ? 'warn' : ''}"><b>${open}</b> open ${open === 1 ? 'note' : 'notes'}</span>` +
+    (state.rubric ? `<span><button type="button" id="rubric-btn">Rubric <b>${rubricAvg().toFixed(1)}</b> · <span class="verdict ${state.rubric.verdict === 'SHIP' ? 'ship' : 'revise'}">${esc(state.rubric.verdict || 'REVISE')}</span></button></span>` : '') +
+    `<span class="right"><span>Last review <b>${esc(last)}</b></span><span><button type="button" id="lessons-btn">Lessons${rules ? ` <b>${rules}</b>` : ''}</button></span></span>`;
+  $('#lessons-btn').onclick = e => showLessonsPop(e.currentTarget);
+  const rb = $('#rubric-btn'); if (rb) rb.onclick = e => showRubricPop(e.currentTarget);
+  const cur = state.current, sec = all.find(x => x.title === cur), st = sec ? sectionStatus(cur, sec.words) : (cur === NOTES ? null : 'empty');
+  const failing = cur && state.checks[cur] ? Object.values(state.checks[cur]).filter(v => v.status !== 'pass').length : 0;
+  $('#dock-line').innerHTML = cur ? `<b>${esc(cur)}</b>${st ? ' · ' + STATUS_LABEL[st] : ''}${failing ? ` · ${failing} check${failing === 1 ? '' : 's'} to fix` : ''}` : '';
+  $('#context-btn').textContent = state.attachments.filter(a => !a.error).length ? `+ Context (${state.attachments.filter(a => !a.error).length})` : '+ Context';
+  const nn = words(state.notes); $('#notes-n').textContent = nn ? nn : '';
+  const foot = $('#toc .toc-foot'); if (foot) foot.textContent = n ? `${n.toLocaleString()} ${n === 1 ? 'word' : 'words'} · ${mins} min read` : 'Nothing written yet';
+}
+function ago(t) {
+  const m = Math.round((Date.now() - t) / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return m + ' min ago';
+  const h = Math.round(m / 60);
+  return h < 24 ? h + ' h ago' : Math.round(h / 24) + ' d ago';
+}
+function renderOutline() {
+  const o = $('#toc');
+  o.innerHTML = '';
+  const have = sections(), lower = t => t.toLowerCase();
+  // Template sections first (present or still missing), then any extra sections, then Notes.
+  const rows = tpl().sections.map(s => { const h = have.find(x => lower(x.title) === lower(s.title)); return { title: s.title, words: h ? h.words : 0, missing: !h, hint: s.hint, status: h ? sectionStatus(h.title, h.words) : 'empty' }; });
+  for (const h of have) if (!rows.some(r => lower(r.title) === lower(h.title))) rows.push({ title: h.title, words: h.words, status: sectionStatus(h.title, h.words) });
+  rows.push({ title: NOTES, words: words(state.notes), notes: true });
+  for (const r of rows) {
+    const b = el('button', { type: 'button', className: 'toc-item' + (r.notes ? ' notes' : '') + (r.missing ? ' missing' : '') + (r.words ? ' filled' : '') + (r.status ? ' ' + r.status : '') + (r.title === state.current ? ' on' : '') });
+    b.innerHTML = `<span class="tick"></span><span class="label">${esc(r.title)}</span><span class="count">${r.missing ? 'add' : r.words || '–'}</span>`;
+    b.title = r.missing ? `Add this section. ${r.hint}` : (r.hint || r.title);
+    b.onclick = () => {
+      if (r.notes) { setCurrent(NOTES); showView('notes'); notesBox().focus(); return; }
+      showView('doc');
+      if (r.missing) addSection(r.title); else { setCurrent(r.title); doc.reveal(r.title); }
+    };
+    o.append(b);
+  }
+  o.append(el('div', { className: 'toc-foot' }));
+  renderMeta();
+}
+function addSection(title) {
+  const ed = doc.editor, d = ed.state.doc;
+  // An untouched document (one empty line) gets replaced; otherwise the section goes at the end.
+  const blankDoc = d.childCount === 1 && d.firstChild.type.name === 'paragraph' && d.firstChild.content.size === 0;
+  const at = blankDoc ? { from: 0, to: d.content.size } : d.content.size, start = blankDoc ? 0 : d.content.size;
+  ed.chain().insertContentAt(at, [{ type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: title }] }, { type: 'paragraph' }]).setTextSelection(start + title.length + 3).focus().run();
+  setCurrent(title);
+  doc.reveal(title);
+}
+function setCurrent(t) {
+  if (state.current === t) return;
+  state.current = t;
+  save(); renderOutline(); renderCoachBar();
+}
+
+/* ---------- section coaching (strips inside the document) ---------- */
+function sectionStatus(title, wordsIn) {
+  if (!wordsIn) return 'empty';
+  const ch = state.checks[title] || {};
+  const items = tplChecks(title).map(i => ch[i]?.status).filter(Boolean);
+  if (!items.length) return 'drafted';
+  if (items.some(x => x === 'fail' || x === 'partial')) return 'needs';
+  return 'ready';
+}
+const STATUS_LABEL = { empty: 'Not started', drafted: 'Drafted. Ask for a review', needs: 'Needs work', ready: 'Ready for review' };
+function sectionNotes(title) { return state.comments.filter(c => !c.resolved && c.section === title); }
+function renderStrip(sec) {
+  const title = sec.title, status = sectionStatus(title, sec.words);
+  const open = sectionNotes(title).length;
+  const sig = status + '|' + open + '|' + (tplSection(title) ? 1 : 0);
+  if (!tplSection(title) && !open) return null;
+  return { tail: { sig, dom: () => {
+    const b = el('button', { type: 'button', className: 'hbadge ' + status, title: STATUS_LABEL[status] + (open ? ` · ${open} open note${open === 1 ? '' : 's'}` : '') });
+    b.append(el('i'));
+    if (open) b.append(el('span', { className: 'n', textContent: open }));
+    b.onmousedown = e => { e.preventDefault(); e.stopPropagation(); showSectionPop(title, b); };
+    return b;
+  } } };
+}
+function showSectionPop(title, anchor) {
+  const pop = $('#pop'), sec = sections().find(x => x.title === title), status = sectionStatus(title, sec ? sec.words : 0);
+  const hint = tplHint(title), checks = tplChecks(title), verdicts = state.checks[title] || {}, notes = sectionNotes(title);
+  clearTimeout(popTimer); popId = 'section:' + title;
+  pop.className = 'pop section ' + status; pop.replaceChildren();
+  const head = el('div', { className: 'card-head' }); head.append(el('b', { textContent: title }), el('span', { className: 'pill', textContent: STATUS_LABEL[status] })); pop.append(head);
+  if (hint) pop.append(el('p', { className: 'goal', textContent: hint }));
+  if (checks.length) {
+    const cs = el('div', { className: 'checks' });
+    for (const item of checks) { const v = verdicts[item]; const c = el('span', { className: 'check ' + (v?.status || ''), title: v ? v.note : 'Not reviewed yet' }); c.append(el('i', { textContent: v?.status === 'pass' ? '✓' : v?.status === 'partial' ? '~' : v?.status === 'fail' ? '!' : '' }), el('span', { textContent: item })); cs.append(c); }
+    pop.append(cs);
+  }
+  if (notes.length) { const list = el('div', { className: 'notes' }); for (const c of notes) list.append(commentCard(c)); pop.append(list); }
+  const row = el('div', { className: 'row' });
+  const go = el('button', { type: 'button', className: 'go', textContent: status === 'empty' ? 'Interview me for this section' : status === 'ready' ? 'Review again' : 'Coach this section' });
+  go.onclick = () => { hidePop(); setCurrent(title); if (status === 'empty') { setMode('interview'); send(ACTIONS.interview[0][1](title)); } else { setMode('review'); send(ACTIONS.review[0][1](title)); } };
+  row.append(go); pop.append(row);
+  pop.hidden = false;
+  const r = anchor.getBoundingClientRect(), w = pop.offsetWidth, h = pop.offsetHeight;
+  pop.style.left = Math.max(8, Math.min(r.left, innerWidth - w - 8)) + 'px';
+  pop.style.top = (r.bottom + 8 + h < innerHeight - 8 ? r.bottom + 8 : Math.max(8, r.top - h - 8)) + 'px';
+}
+
+/* ---------- coach controls ---------- *//* ---------- coach controls ---------- */
+const panelReviewPrompt = () => {
+  const who = (tpl().readers || ['Staff peer', 'Skeptical VP', 'Future maintainer']).slice(0, 3);
+  return `Review the whole document as a panel of three independent reviewers: ${who.map(n => `${n} (${PERSONAS[n] || ''})`).join('; ')}. Give every note a persona attribute. Then score the rubric and give a verdict. Quote the exact words for every note.`;
+};
+const ACTIONS = {
+  interview: [
+    ['Interview me', s => `Interview me for the "${s}" section. Ask me one question at a time.`],
+    ['Thesis', () => 'Give me the thesis for this document: the bottom line in at most 25 words, the ask, three supporting claims with facts, the strongest counterargument, and what would change your mind. If you cannot without inventing facts, say THESIS BLOCKED and ask me the questions.'],
+    ['Sort my notes', () => 'Read my raw notes. Sort them into the template sections and write a draft for each section you have material for. Then tell me what is still missing.'],
+    ['What is missing?', () => 'Look at the whole document end to end. What important things am I missing? List them, most important first, then ask me about the first one.'],
+  ],
+  review: [
+    ['Review this section', s => `Review the "${s}" section.`],
+    ['Fix English', s => `Only fix the English in the "${s}" section. Keep my meaning and my facts.`],
+    ['Lint', () => 'Lint the whole document against the style rules.'],
+    ['Check facts', s => `In the "${s}" section, list every claim or number a reviewer might doubt, as fact notes with the exact words quoted.`],
+  ],
+};
+function renderCoachBar() {
+  document.querySelectorAll('.modes button').forEach(b => b.setAttribute('aria-pressed', b.dataset.mode === state.mode));
+  const a = $('#actions');
+  a.innerHTML = '';
+  for (const [label, msg] of ACTIONS[state.mode]) {
+    const b = el('button', { textContent: label, type: 'button', title: state.current });
+    b.onclick = () => send(msg(state.current), { label: `${label} · ${state.current}` });
+    a.append(b);
+  }
+}
+function setMode(mode) { state.mode = mode; save(); renderCoachBar(); }
+function setFocus(on) {
+  state.focus = on; save();
+  document.querySelector('.app').classList.toggle('focus', on);
+  $('#focus-btn').textContent = on ? 'Show coach' : 'Focus';
+}
+
+/* ---------- coach replies -> thread + comments ---------- */
+const TAG = /<(note|draft)\b([^>]*)>([\s\S]*?)<\/\1>/g;
+const KIND_LABEL = { english: 'English', missing: 'Missing', fact: 'Check this fact', question: 'A reviewer will ask', structure: 'Structure', draft: 'Draft' };
+const KIND_SHORT = { english: 'English', missing: 'Missing', fact: 'Fact', question: 'Question', structure: 'Structure', draft: 'Draft' };
+const plural = (n, k) => n === 1 || ['english', 'missing', 'structure'].includes(k) ? KIND_SHORT[k] : KIND_SHORT[k] + 's';
+const attrs = s => Object.fromEntries([...s.matchAll(/(\w+)="([^"]*)"/g)].map(m => [m[1], m[2].replace(/&quot;/g, '"')]));
+const inline = s => s.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/`([^`]+)`/g, '<code>$1</code>');
+function md(t) {
+  t = t.trim();
+  if (!t) return null;
+  const html = esc(t).split(/\n{2,}/).map(p => {
+    const lines = p.split('\n');
+    if (lines.every(l => /^\s*([-*]|\d+\.)\s/.test(l))) {
+      const tag = /^\s*\d+\./.test(lines[0]) ? 'ol' : 'ul';
+      return `<${tag}>${lines.map(l => '<li>' + inline(l.replace(/^\s*([-*]|\d+\.)\s/, '')) + '</li>').join('')}</${tag}>`;
+    }
+    if (/^#{1,4}\s/.test(p)) return '<h4>' + inline(p.replace(/^#+\s/, '')) + '</h4>';
+    return '<p>' + inline(p).replace(/\n/g, '<br>') + '</p>';
+  }).join('');
+  return el('div', { className: 'md', innerHTML: html });
+}
+const kindOf = a => KIND_LABEL[a.type] && a.type !== 'draft' ? a.type : 'structure';
+// Text the thread shows: the reply minus its tags (they become comments).
+const prose = text => text.replace(TAG, '').replace(/<(check|score)\b[^>]*>[\s\S]*?<\/\1>/g, '').replace(/<verdict>[\s\S]*?<\/verdict>/g, '').replace(/<(note|draft|check|score|verdict)\b[\s\S]*$/, '').replace(/\n{3,}/g, '\n\n').trim();
+function typing(label) {
+  return el('div', { className: 'pending', innerHTML: `<span class="typing"><i></i><i></i><i></i></span>${esc(label)}` });
+}
+function findSection(name) {
+  const n = (name || '').trim().toLowerCase();
+  if (n === 'raw notes') return NOTES;
+  return titles().find(t => t.toLowerCase() === n) || titles().find(t => n && t.toLowerCase().includes(n)) || (name || '').trim() || state.current;
+}
+/** Turn a finished reply into comments on the document. Returns how many were added. */
+const CHECK = /<check\b([^>]*)>([\s\S]*?)<\/check>/g;
+const SCORE = /<score\b([^>]*)>([\s\S]*?)<\/score>/g;
+function ingest(reply, section) {
+  let n = 0;
+  const scores = {};
+  for (const m of reply.matchAll(SCORE)) { const a = attrs(m[1]), dim = (a.dimension || '').trim().toLowerCase(), v = Number(a.value); if (RUBRIC.includes(dim) && v >= 1 && v <= 5) scores[dim] = { value: v, note: m[2].trim() }; }
+  const verdict = (reply.match(/<verdict>\s*(SHIP|REVISE)\s*<\/verdict>/i) || [])[1];
+  if (Object.keys(scores).length) state.rubric = { scores, verdict: (verdict || '').toUpperCase(), at: Date.now() };
+  for (const m of reply.matchAll(CHECK)) {
+    const a = attrs(m[1]), sec = findSection(a.section), item = (a.item || '').trim().toLowerCase();
+    const known = tplChecks(sec).find(i => i.toLowerCase() === item || i.toLowerCase().includes(item) || item.includes(i.toLowerCase()));
+    if (!known || !['pass', 'partial', 'fail'].includes(a.status)) continue;
+    (state.checks[sec] ||= {})[known] = { status: a.status, note: m[2].trim(), at: Date.now() };
+  }
+  for (const m of reply.matchAll(TAG)) {
+    const a = attrs(m[2]), body = m[3].trim();
+    if (m[1] === 'draft') {
+      state.comments.push({ id: uid(), kind: 'draft', section: findSection(a.section), body, resolved: false, at: Date.now() });
+    } else {
+      const c = { id: uid(), kind: kindOf(a), quote: a.quote || '', fix: a.fix || '', rule: (a.rule || '').toLowerCase(), persona: a.persona || '', severity: ['high', 'medium', 'low'].includes(a.severity) ? a.severity : '', section, body, resolved: false, at: Date.now() };
+      c.anchored = !!(c.quote && doc.annotate(c.id, c.kind, c.quote, section));
+      if (c.anchored) { const pos = doc.anchors()[c.id]?.pos; const home = pos != null && sections().find(x => x.from <= pos && pos < x.to); if (home) c.section = home.title; }
+      state.comments.push(c);
+    }
+    n++;
+  }
+  state.docJson = doc.json();
+  return n;
+}
+function fillMsg(d, m) {
+  if (m.role === 'user') { d.textContent = m.label || m.content; return; }
+  const nodes = [];
+  if (m.verify) {
+    nodes.push(el('div', { className: 'verify', textContent: m.done ? `Checked quotes against the text: ${m.added} fixed${m.unfound ? `, ${m.unfound} dropped` : ''}.` : 'Checking quotes against the text…' }));
+    d.replaceChildren(...nodes); return;
+  }
+  const text = prose(m.content);
+  if (text) nodes.push(md(text));
+  if (!m.done) nodes.push(typing(/<(note|draft)\b/.test(m.content.slice(-400)) ? 'Writing a comment' : 'Thinking'));
+  else if (m.added) { const a = el('button', { className: 'added', type: 'button', innerHTML: `${m.added} note${m.added === 1 ? '' : 's'} added to the document →` }); a.onclick = () => { showView('doc'); const first = state.comments.find(c => !c.resolved); if (first) activate(first.id, true); }; nodes.push(a); }
+  d.replaceChildren(...nodes.filter(Boolean));
+}
+function welcome() {
+  const w = el('div', { className: 'welcome' });
+  w.innerHTML = `<b>Private. Only you see this.</b> Write anything, or paste rough notes in the Notes tab. The bars on the left are the sections a ${esc(tpl().name.toLowerCase())} usually needs; click one to add it. Ask for a review and my notes appear as underlines in your text.`;
+  return w;
+}
+function setThread(open) { state.threadOpen = open; $('#thread').hidden = !open; $('#thread-show').hidden = open; save(); }
+function renderLog() {
+  const log = $('#log');
+  log.replaceChildren();
+  if (!state.chat.length) log.append(welcome());
+  for (const m of state.chat) { if (m.hidden) continue; const d = el('div', { className: 'msg ' + m.role }); fillMsg(d, m); log.append(d); }
+  log.scrollTop = log.scrollHeight;
+}
+
+/* ---------- comment rail ---------- */
+let commentsTimer;
+function scheduleComments() { clearTimeout(commentsTimer); commentsTimer = setTimeout(renderComments, 150); }
+function commentCard(c) {
+  const card = el('div', { className: `card ${c.kind}` + (c.resolved ? ' resolved' : '') + (c.id === state.active ? ' active' : '') });
+  card.dataset.id = c.id;
+  const head = el('div', { className: 'card-head' });
+  head.innerHTML = `<span class="k"></span><b>${esc(KIND_SHORT[c.kind])}</b>` + (c.persona ? `<span class="persona">${esc(c.persona)}</span>` : '<span class="who">Coach</span>');
+  const right = el('span', { className: 'right' });
+  if (c.severity) right.append(el('span', { className: 'sev ' + c.severity, textContent: c.severity }));
+  const resolve = el('button', { type: 'button', className: 'resolve', textContent: c.resolved ? 'Reopen' : c.applied ? 'Applied' : 'Resolve' });
+  resolve.onclick = e => { e.stopPropagation(); toggleResolved(c); };
+  right.append(resolve); head.append(right);
+  card.append(head);
+  if (c.kind === 'draft') {
+    card.append(el('div', { className: 'quote', textContent: 'for ' + c.section }));
+    card.append(el('div', { className: 'draft-text', textContent: c.body }));
+    const row = el('div', { className: 'row' });
+    // Undo state lives on the comment, so it survives the rail re-rendering.
+    const use = el('button', { textContent: c.used ? 'Undo' : 'Use this draft', type: 'button' });
+    const add = el('button', { className: 'ghost', textContent: 'Add to the end', type: 'button', disabled: !!c.used });
+    use.onclick = e => {
+      e.stopPropagation();
+      if (c.used) { putText(c.section, c.used.before, 'replace'); c.used = null; }
+      else { c.used = { before: sectionText(c.section) }; putText(c.section, c.body, 'replace'); }
+      use.textContent = c.used ? 'Undo' : 'Use this draft'; add.disabled = !!c.used;
+      save(); refreshDoc(c.section);
+    };
+    add.onclick = e => { e.stopPropagation(); putText(c.section, c.body, 'append'); save(); refreshDoc(c.section); };
+    row.append(use, add); card.append(row);
+  } else {
+    if (c.fix && c.quote) { const sw = el('div', { className: 'sw' }); sw.append(el('s', { textContent: c.quote }), el('span', { textContent: '→' }), el('b', { textContent: c.fix })); card.append(sw); }
+    else if (c.quote) card.append(el('div', { className: 'quote', textContent: '“' + c.quote + '”' }));
+    const b = md(c.body); if (b) card.append(b);
+    if (c.fix && c.anchored && !c.resolved) {
+      const row = el('div', { className: 'row' });
+      const ok = el('button', { type: 'button', className: 'accept', textContent: 'Accept' });
+      ok.onclick = e => { e.stopPropagation(); acceptFix(c); };
+      row.append(ok); card.append(row);
+    }
+  }
+  card.onclick = () => activate(c.id, true);
+  return card;
+}
+function renderComments() {
+  const open = state.comments.filter(c => !c.resolved);
+  doc.refreshCoach();
+  renderLessons();
+  renderOutline();
+  renderMeta();
+}
+function lessonsByRule() {
+  const byRule = {};
+  for (const c of state.comments) if (c.kind === 'english' && c.rule) { const r = byRule[c.rule] ||= { n: 0, body: '' }; r.n++; r.body = c.body; }
+  return byRule;
+}
+function renderLessons() { renderMeta(); }
+const rubricAvg = () => { const v = Object.values(state.rubric?.scores || {}).map(x => x.value); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : 0; };
+function showRubricPop(anchor) {
+  const pop = $('#pop'); clearTimeout(popTimer); popId = 'rubric';
+  pop.className = 'pop rubric'; pop.replaceChildren();
+  const head = el('div', { className: 'card-head' }); head.append(el('b', { textContent: 'Review rubric' }), el('span', { className: 'verdict ' + (state.rubric.verdict === 'SHIP' ? 'ship' : 'revise'), style: 'margin-left:auto', textContent: state.rubric.verdict || 'REVISE' })); pop.append(head);
+  const t = el('div', { className: 'rubric-table' });
+  for (const d of RUBRIC) { const s = state.rubric.scores[d]; t.append(el('span', { textContent: d }), el('b', { className: s ? (s.value <= 2 ? 'lo' : s.value >= 4 ? 'hi' : '') : '', textContent: s ? s.value : '–' }), el('small', { textContent: s ? s.note : 'not scored' })); }
+  pop.append(t, el('p', { className: 'note', style: 'margin:8px 0 0;font-size:12px;color:var(--faint)', textContent: `Average ${rubricAvg().toFixed(1)} · SHIP needs 4.0 or more, nothing below 3, and no high-severity note. Reviewed ${ago(state.rubric.at)}.` }));
+  pop.hidden = false;
+  const r = anchor.getBoundingClientRect(), w = pop.offsetWidth, h = pop.offsetHeight;
+  pop.style.left = Math.max(8, Math.min(r.left, innerWidth - w - 8)) + 'px';
+  pop.style.top = Math.max(8, r.top - h - 8) + 'px';
+}
+function showLessonsPop(anchor) {
+  const pop = $('#pop'); clearTimeout(popTimer); popId = 'lessons';
+  pop.className = 'pop lessons'; pop.replaceChildren();
+  const head = el('div', { className: 'card-head' }); head.append(el('b', { textContent: 'Lessons' })); pop.append(head);
+  const rules = Object.entries(lessonsByRule()).sort((a, b) => b[1].n - a[1].n).slice(0, 8);
+  if (!rules.length) pop.append(el('div', { className: 'lessons-empty', textContent: 'The English rules you keep hitting will collect here after a review, so you can see what to practise.' }));
+  else { const list = el('div', { className: 'lesson-list' }); for (const [rule, r] of rules) { const d = el('div', { className: 'lesson' }); d.append(el('b', { textContent: r.n + '×' }), el('span', { className: 'r', textContent: rule }), el('small', { textContent: r.body })); list.append(d); } pop.append(list); }
+  pop.hidden = false;
+  const r = anchor.getBoundingClientRect(), w = pop.offsetWidth, h = pop.offsetHeight;
+  pop.style.left = Math.max(8, Math.min(r.right - w, innerWidth - w - 8)) + 'px';
+  pop.style.top = Math.max(8, r.top - h - 8) + 'px';
+}
+function activate(id, scrollDoc) {
+  state.active = id;
+  doc.setActiveComment(id);
+  document.querySelectorAll('.card').forEach(c => c.classList.toggle('active', c.dataset.id === id));
+  const c = state.comments.find(x => x.id === id);
+  if (!c) return;
+  if (scrollDoc) { if (!doc.goTo(id) && c.section && c.section !== NOTES) doc.reveal(c.section); }
+  doc.refreshCoach();
+}
+function acceptFix(c) {
+  if (!doc.replaceAnnotated(c.id, c.fix)) return;
+  c.resolved = true; c.applied = true; c.anchored = false;
+  state.docJson = doc.json(); if (state.active === c.id) state.active = null;
+  hidePop(); save(); renderComments();
+}
+/* ---------- suggestion popover on highlights ---------- */
+let popTimer = null, popId = null;
+function showPop(id) {
+  const c = state.comments.find(x => x.id === id && !x.resolved); if (!c) return;
+  const mark = document.querySelector(`mark[data-comment="${id}"]`); if (!mark) return;
+  const pop = $('#pop'); popId = id; clearTimeout(popTimer);
+  pop.className = 'pop'; pop.replaceChildren();
+  const head = el('div', { className: 'card-head' }); head.innerHTML = `<b style="color:var(--${c.kind})">${esc(KIND_SHORT[c.kind])}</b>` + (c.severity ? `<span class="sev ${c.severity}">${c.severity}</span>` : '');
+  pop.append(head);
+  if (c.fix) { const sw = el('div', { className: 'sw' }); sw.append(el('s', { textContent: c.quote }), el('span', { textContent: '→' }), el('b', { textContent: c.fix })); pop.append(sw); }
+  const b = md(c.body); if (b) pop.append(b);
+  const row = el('div', { className: 'row' });
+  if (c.fix) { const ok = el('button', { type: 'button', textContent: 'Accept' }); ok.onclick = () => acceptFix(c); row.append(ok); }
+  const dis = el('button', { type: 'button', className: 'ghost', textContent: 'Dismiss' }); dis.onclick = () => { hidePop(); toggleResolved(c); }; row.append(dis);
+  pop.append(row);
+  pop.hidden = false;
+  const r = mark.getBoundingClientRect(), w = pop.offsetWidth, h = pop.offsetHeight;
+  pop.style.left = Math.max(8, Math.min(r.left, innerWidth - w - 8)) + 'px';
+  pop.style.top = (r.top - h - 8 > 8 ? r.top - h - 8 : r.bottom + 8) + 'px';
+}
+function hidePop() { $('#pop').hidden = true; popId = null; }
+document.addEventListener('mouseover', e => {
+  const m = e.target.closest && e.target.closest('mark[data-comment]');
+  if (m) { clearTimeout(popTimer); popTimer = setTimeout(() => showPop(m.dataset.comment), 250); return; }
+  if (e.target.closest && e.target.closest('#pop')) { clearTimeout(popTimer); return; }
+  if (String(popId).startsWith('section:') || (popId && doc.commentAtCursor() === popId)) return;
+  clearTimeout(popTimer); popTimer = setTimeout(hidePop, 300);
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') hidePop(); });
+document.addEventListener('mousedown', e => { if (!e.target.closest('#pop') && !e.target.closest('.hbadge') && !e.target.closest('mark[data-comment]') && !e.target.closest('#lessons-btn') && !e.target.closest('#rubric-btn')) hidePop(); });
+$('#scroll').addEventListener('scroll', hidePop, { passive: true });
+function toggleResolved(c) {
+  c.resolved = !c.resolved;
+  if (c.resolved) doc.unannotate(c.id);
+  else if (c.quote) c.anchored = doc.annotate(c.id, c.kind, c.quote, c.section);
+  state.docJson = doc.json();
+  if (state.active === c.id) state.active = null;
+  save(); renderComments();
+}
+const sectionText = t => t === NOTES ? state.notes : doc.sectionMarkdown(t);
+function putText(t, text, how) {
+  if (t !== NOTES) return doc.setSection(t, text, how);
+  state.notes = how === 'replace' || !state.notes.trim() ? text : state.notes.trimEnd() + '\n\n' + text;
+  notesBox().value = state.notes; grow(notesBox()); save();
+}
+function refreshDoc(t) {
+  renderOutline(); renderMeta();
+  showView(t === NOTES ? 'notes' : 'doc');
+  const node = t === NOTES ? $('#notes') : doc.reveal(t);
+  if (t === NOTES) { notesBox().value = state.notes; grow(notesBox()); }
+  node?.classList.add('flash'); setTimeout(() => node?.classList.remove('flash'), 1400);
+}
+
+/* ---------- talking to the coach ---------- */
+function payload() {
+  return {
+    mode: state.mode, current: state.current, title: state.title, notes: state.notes, audience: state.audience || '', purpose: state.purpose || '', brief: state.brief || {}, style: styleRules || DEFAULT_STYLE,
+    attachments: state.attachments.map(a => a.kind === 'image' ? { name: a.name, kind: 'image', mime: a.mime, data: images[a.id] || '' } : { name: a.name, kind: a.kind, text: a.text || '' }).filter(a => a.kind !== 'image' || a.data),
+    template: { name: tpl().name, sections: tpl().sections },
+    sections: sections().map(({ title, text }) => ({ title, text })),
+    history: state.chat.slice(0, -1).map(({ role, content }) => ({ role, content })),
+  };
+}
+function setBusy(on) { busy = on; $('#send').disabled = on; $('#review-all').disabled = on; $('#coach').classList.toggle('busy', on); doc.refreshCoach(); }
+async function send(text, opts = {}) {
+  if (busy || !text.trim()) return;
+  setBusy(true);
+  const section = state.current;
+  state.chat.push({ role: 'user', content: text.trim(), hidden: !!opts.hidden, label: opts.label || '' });
+  const m = { role: 'assistant', content: '', done: false, verify: !!opts.hidden };
+  setThread(true);
+  state.chat.push(m);
+  renderLog();
+  const d = $('#log').lastElementChild, log = $('#log');
+  const onText = t => { m.content += t; fillMsg(d, m); log.scrollTop = log.scrollHeight; };
+  try {
+    if (!window.__TAURI__) { await mockCoach(text, onText); throw null; }
+    const { invoke, Channel } = window.__TAURI__.core;
+    const onChunk = new Channel();
+    onChunk.onmessage = onText;
+    await invoke('ask', { body: payload(), onChunk });
+  } catch (e) {
+    if (e !== null) m.content += `\n\n${e}`;
+  }
+  if (!m.content.trim()) m.content = 'The coach sent no answer. Please try again.';
+  m.done = true;
+  const before = state.comments.length;
+  m.added = ingest(m.content, section);
+  if (m.added) state.lastReview = Date.now();
+  // Ground the review: notes that quoted words not in the document go back once for correction.
+  const unfound = state.comments.slice(before).filter(c => c.kind !== 'draft' && c.quote && !c.anchored);
+  m.unfound = unfound.length;
+  fillMsg(d, m);
+  setBusy(false);
+  save(); renderComments();
+  if (m.added) showView('doc');
+  if (unfound.length && !opts.hidden) {
+    state.comments = state.comments.filter(c => !unfound.includes(c));
+    const list = unfound.map(c => `- [${c.kind}] quote="${c.quote.replace(/"/g, "'")}" — ${c.body.slice(0, 160)}`).join('\n');
+    await send(`These notes quoted words that are not in the document word for word:\n${list}\n\nSend only these notes again as <note> tags, each with 3 to 12 words copied exactly from the document, or drop the note if you cannot find the words. No other text.`, { hidden: true });
+  }
+}
+
+// Outside the desktop app (plain browser, for UI work) the coach answers with a canned reply that quotes the real text.
+async function mockCoach(text, emit) {
+  const sec = state.current, body = sectionText(sec).replace(/^\s*([-*+]|\d+\.)\s+/gm, '').replace(/[*_`#>\[\]]/g, '');
+  const w = body.split(/\s+/).filter(Boolean);
+  const q1 = w.slice(0, 6).join(' '), q2 = w.slice(-4).join(' ');
+  const reply = /interview/i.test(text)
+    ? `Let us start with the "${sec}" section.\n\nWhen this is done, what will be true that is not true today? One sentence is enough. For example: "No single client can slow down the others."`
+    : w.length < 4
+      ? `The "${sec}" section is empty, so there is nothing to review yet. Write two or three sentences and I will go through them.\n\n<note type="missing">${hintFor(sec) || 'What should a reader learn from this section?'}</note>`
+      : /as a panel/.test(text)
+        ? `Panel verdict first: the ask is clear, the evidence is thin.\n\n<note type="question" severity="high" persona="Skeptical VP">What do I lose if I say no for a quarter?</note>\n\n<note type="missing" severity="medium" persona="Staff peer" quote="${q2}">Why not the simpler option: per-client quotas at the load balancer?</note>\n\n<note type="question" severity="medium" persona="On-call SRE">What wakes me up at 3 a.m., and how do I undo it?</note>\n\n${RUBRIC.map((d, k) => `<score dimension="${d}" value="${[4, 2, 3, 3, 4, 4, 3, 2][k]}">${['Ask is in the first lines.', 'Adjectives where numbers should be.', 'Do-nothing is missing.', 'Risks are named, mitigation is thin.', 'Right vocabulary for the reader.', 'Headings argue.', 'Some restatement.', 'No owner or date.'][k]}</score>`).join('\n')}\n<verdict>REVISE</verdict>\n\nNext: add the do-nothing option with its cost.`
+      : /quoted words that are not in the document/.test(text)
+        ? `<note type="missing" severity="medium" quote="${w.slice(-3).join(' ')}">How much, and how often? Add one number a reviewer can check.</note>`
+        : `This section has the right idea, but a reviewer will need numbers.\n\n<note type="english" severity="medium" quote="${q1}" fix="The Payments API gets too many requests from a few clients" rule="subject-verb agreement">A singular subject takes a singular verb, and "many" takes a plural noun.</note>\n\n<note type="missing" severity="high" quote="${q2} invented words">How much, and how often? Add one number a reviewer can check.</note>\n\n<note type="question" severity="medium">A reviewer will ask: why not just scale up the servers?</note>\n\n<draft section="${sec}">A few clients send bursts of traffic to the Payments API. During these bursts, p99 latency rises from [TODO: X ms] to [TODO: Y ms] for all clients.</draft>\n\n${tplChecks(sec).map((i, k) => `<check section="${sec}" item="${i}" status="${['pass', 'fail', 'partial', 'fail'][k % 4]}">${['Clear enough.', 'Not there yet.', 'Thin: one example, no numbers.', 'Missing.'][k % 4]}</check>`).join('\n')}\n\nNext: get the latency numbers from your dashboard.`;
+  await new Promise(r => setTimeout(r, 500));
+  for (const piece of reply.match(/[\s\S]{1,24}/g)) { emit(piece); await new Promise(r => setTimeout(r, 10)); }
+}
+
+/* ---------- library: all documents ---------- */
+async function openDoc(id) {
+  if (state.id && dirty) await flush();
+  const d = await store.load(id);
+  state = Object.assign(blank(), d, { id });
+  localStorage.setItem(LAST, id);
+  doc.editor.commands.setContent(state.docJson || { type: 'doc', content: [{ type: 'paragraph' }] });
+  if (!state.docJson) { state.docJson = doc.json(); }
+  if (!titles().includes(state.current) && !tpl().sections.some(x => x.title === state.current)) state.current = firstSection();
+  renderAll();
+  showView('doc');
+}
+async function createDoc(title, templateId) {
+  if (state.id && dirty) await flush();
+  const id = await store.create(title || 'Untitled');
+  const fresh = Object.assign(blank(), { id, title: title || '', templateId: templateId || state.templateId || 'design' });
+  await store.save(id, { ...fresh, meta: { words: 0, sections: 0, ready: 0, open: 0, updated: Date.now() } }, `# ${title || 'Untitled'}\n`);
+  await openDoc(id);
+  $('#title').focus();
+}
+let wsInfo = null;
+async function renderLibrary() {
+  const box = $('#library');
+  box.replaceChildren();
+  try { wsInfo = await store.ws.info(); } catch (e) { box.append(el('div', { className: 'lib-empty', textContent: 'Could not open the workspace: ' + e })); return; }
+  $('#ws-crumb').textContent = wsInfo.name;
+  // Header: workspace name, path, switcher
+  const head = el('div', { className: 'lib-head' });
+  head.append(el('h1', { textContent: wsInfo.name }), el('span', { className: 'path', textContent: wsInfo.path }));
+  const right = el('div', { className: 'right' });
+  if (inApp) {
+    const sw = el('select', { title: 'Switch workspace' });
+    for (const w of wsInfo.workspaces) sw.append(el('option', { value: w.path, textContent: w.name + (w.exists ? '' : ' (missing)') }));
+    sw.append(el('option', { value: '__new', textContent: 'New or existing folder…' }));
+    sw.value = wsInfo.path;
+    sw.onchange = async () => {
+      if (sw.value === '__new') { sw.value = wsInfo.path; newWorkspace(); return; }
+      try { await store.ws.use(sw.value); localStorage.removeItem(LAST); state = blank(); renderLibrary(); } catch (e) { alert(e); }
+    };
+    const open = el('button', { type: 'button', className: 'btn', textContent: 'Open in Finder' }); open.onclick = () => store.reveal(null);
+    right.append(sw, open);
+  }
+  head.append(right); box.append(head);
+  box.append(el('p', { className: 'lib-folder', textContent: 'A workspace is a folder: documents/ (one folder each, with a Markdown copy and assets), diagrams/ and files/ shared by all of them.' }));
+
+  // Documents
+  const docsSec = el('section', { className: 'lib-sec' });
+  const dh = el('div', { className: 'lib-sec-head' }); dh.append(el('h2', { textContent: 'Documents' }));
+  const dright = el('div', { className: 'right' });
+  const imp = el('button', { type: 'button', className: 'btn', textContent: 'Import…' }); imp.onclick = () => openImport();
+  dright.append(imp); dh.append(dright); docsSec.append(dh);
+  const form = el('form', { className: 'lib-new' });
+  const title = el('input', { placeholder: 'Title of a new document' }); title.setAttribute('aria-label', 'Title');
+  const pick = el('select'); for (const [id, t] of Object.entries(TEMPLATES)) pick.append(el('option', { value: id, textContent: t.name }));
+  pick.value = state.templateId || 'design';
+  const which = el('button', { type: 'button', className: 'btn', textContent: 'Which type?' }); which.onclick = () => openRouter(t => { pick.value = t; });
+  form.append(title, pick, which, el('button', { type: 'submit', className: 'btn primary', textContent: 'Create' }));
+  form.onsubmit = e => { e.preventDefault(); createDoc(title.value.trim(), pick.value); };
+  docsSec.append(form);
+  const grid = el('div', { className: 'lib-grid' });
+  let docs = []; try { docs = await store.list(); } catch (e) { grid.append(el('div', { className: 'lib-empty', textContent: 'Could not read the workspace: ' + e })); }
+  if (!docs.length) grid.append(el('div', { className: 'lib-empty', textContent: 'No documents yet. Give one a title and press Create, or import a Markdown, Word or Confluence page.' }));
+  for (const d of docs) {
+    const card = el('button', { type: 'button', className: 'doc' });
+    card.append(el('div', { className: 't', textContent: d.title || 'Untitled' }), el('div', { className: 'k', textContent: (TEMPLATES[d.templateId]?.name || 'Document') + (d.updated ? ' · edited ' + ago(d.updated) : '') }));
+    const m = el('div', { className: 'm' });
+    m.innerHTML = `<span><b>${(d.words || 0).toLocaleString()}</b> words</span><span><b class="${d.sections && d.ready === d.sections ? 'ok' : ''}">${d.ready || 0}/${d.sections || 0}</b> sections ready</span>${d.open ? `<span class="warn"><b>${d.open}</b> open notes</span>` : ''}`;
+    card.append(m);
+    const x = el('button', { type: 'button', className: 'x', textContent: '×', title: 'Delete this document' });
+    x.onclick = async e => { e.stopPropagation(); if (x.dataset.armed) { await store.remove(d.id); if (state.id === d.id) { state = blank(); localStorage.removeItem(LAST); } renderLibrary(); } else { x.dataset.armed = '1'; x.textContent = 'Delete?'; setTimeout(() => { x.dataset.armed = ''; x.textContent = '×'; }, 3000); } };
+    card.append(x);
+    card.onclick = () => openDoc(d.id);
+    grid.append(card);
+  }
+  docsSec.append(grid); box.append(docsSec);
+
+  // Diagrams
+  const dgSec = el('section', { className: 'lib-sec' });
+  const gh = el('div', { className: 'lib-sec-head' }); gh.append(el('h2', { textContent: 'Diagrams' }), el('span', { className: 'n', textContent: 'Shared by every document in this workspace' }));
+  const gright = el('div', { className: 'right' });
+  const nd = el('button', { type: 'button', className: 'btn primary', textContent: 'New diagram' });
+  nd.onclick = async () => { try { await loadDiagram(); } catch (e) { alert(e.message); return; } const r = await window.Diagram.open(null); if (!r) return; await store.diagrams.save(`diagram-${new Date().toISOString().slice(0, 16).replace(/[T:]/g, '-')}`, r.svg, r.scene); renderLibrary(); };
+  gright.append(nd); gh.append(gright); dgSec.append(gh);
+  const dgrid = el('div', { className: 'dgrid' });
+  let dgs = []; try { dgs = await store.diagrams.list(); } catch {}
+  if (!dgs.length) dgrid.append(el('div', { className: 'lib-empty', textContent: 'No diagrams yet. Draw one here and insert it into any document, or draw inside a document with /diagram.' }));
+  for (const g of dgs) {
+    const c = el('div', { className: 'dcard' });
+    const th = el('div', { className: 'thumb' }); th.append(el('img', { src: 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(g.svg))), alt: g.name })); c.append(th);
+    const body = el('div', { className: 'body' }); body.append(el('div', { className: 'nm', textContent: g.name, title: g.name }));
+    const row = el('div', { className: 'row' });
+    if (state.id) { const ins = el('button', { type: 'button', className: 'primary', textContent: 'Insert into ' + (state.title || 'document') }); ins.onclick = async () => { const d = await store.diagrams.load(g.name); let file = null; try { if (inApp) file = await store.asset(state.id, `${g.name}.svg`, btoa(unescape(encodeURIComponent(d.svg)))); } catch {} showView('doc'); doc.editor.commands.focus('end'); doc.insertDiagram(d.svg, d.scene, file); save(); }; row.append(ins); }
+    const ed = el('button', { type: 'button', textContent: 'Edit' }); ed.onclick = async () => { const d = await store.diagrams.load(g.name); try { await loadDiagram(); } catch (e) { alert(e.message); return; } const r = await window.Diagram.open(d.scene || null); if (!r) return; await store.diagrams.save(g.name, r.svg, r.scene); renderLibrary(); };
+    const del = el('button', { type: 'button', textContent: 'Delete' }); del.onclick = async () => { if (del.dataset.armed) { await store.diagrams.remove(g.name); renderLibrary(); } else { del.dataset.armed = '1'; del.textContent = 'Delete?'; setTimeout(() => { del.dataset.armed = ''; del.textContent = 'Delete'; }, 3000); } };
+    row.append(ed, del); body.append(row); c.append(body); dgrid.append(c);
+  }
+  dgSec.append(dgrid); box.append(dgSec);
+
+  // Files
+  const fSec = el('section', { className: 'lib-sec' });
+  const fh = el('div', { className: 'lib-sec-head' }); fh.append(el('h2', { textContent: 'Files' }), el('span', { className: 'n', textContent: 'Context any document can attach: specs, tickets, data, screenshots, PDFs' }));
+  const fright = el('div', { className: 'right' });
+  const addLabel = el('label', { className: 'btn primary', textContent: 'Add files' }); const fin = el('input', { type: 'file', multiple: true, hidden: true }); addLabel.append(fin);
+  fin.onchange = async e => { for (const f of e.target.files) { if (f.size > 20 * 1048576) { alert(f.name + ' is over 20 MB.'); continue; } await store.files.add(f.name, await readAs(f, 'base64')); } fin.value = ''; renderLibrary(); };
+  fright.append(addLabel); fh.append(fright); fSec.append(fh);
+  const flist = el('div', { className: 'flist' });
+  let files = []; try { files = await store.files.list(); } catch {}
+  if (!files.length) flist.append(el('div', { className: 'lib-empty', textContent: 'No shared files yet.' }));
+  for (const f of files) {
+    const r = el('div', { className: 'frow' });
+    r.append(el('span', { className: 'nm', textContent: f.name }), el('small', { textContent: fmtSize(f.size) }));
+    if (state.id) { const at = el('button', { type: 'button', textContent: 'Attach to ' + (state.title || 'document') }); at.onclick = async () => { await attachWorkspaceFile(f.name); at.textContent = 'Attached'; }; r.append(at); }
+    const del = el('button', { type: 'button', textContent: 'Delete' }); del.onclick = async () => { if (del.dataset.armed) { await store.files.remove(f.name); renderLibrary(); } else { del.dataset.armed = '1'; del.textContent = 'Delete?'; setTimeout(() => { del.dataset.armed = ''; del.textContent = 'Delete'; }, 3000); } };
+    r.append(del); flist.append(r);
+  }
+  fSec.append(flist); box.append(fSec);
+}
+async function attachWorkspaceFile(name) {
+  const data = await store.files.read(name);
+  if (!data) return;
+  const bytes = Uint8Array.from(atob(data), c => c.charCodeAt(0));
+  const type = /\.(png|jpe?g|gif|webp)$/i.test(name) ? 'image/' + name.split('.').pop().toLowerCase().replace('jpg', 'jpeg') : /\.pdf$/i.test(name) ? 'application/pdf' : 'text/plain';
+  await addFiles([new File([bytes], name, { type })]);
+}
+function newWorkspace() {
+  const m = $('#import'); m.replaceChildren();
+  const box = el('div', { className: 'box' });
+  box.append(el('h2', { textContent: 'New workspace' }));
+  const name = el('input', { type: 'text', placeholder: 'Name, e.g. Platform team docs' });
+  const path = el('input', { type: 'text', placeholder: '/Users/you/Documents/Platform docs' });
+  const l1 = el('label', { textContent: 'Name' }); l1.append(name); const l2 = el('label', { textContent: 'Folder (created if it does not exist; an existing workspace folder is opened as is)' }); l2.append(path);
+  const foot = el('div', { className: 'foot' }); const err = el('span', { className: 'err' });
+  const cancel = el('button', { type: 'button', className: 'btn', textContent: 'Cancel' }); cancel.onclick = () => { m.hidden = true; };
+  const ok = el('button', { type: 'button', className: 'btn primary', textContent: 'Use this workspace' });
+  ok.onclick = async () => { try { await store.ws.use(path.value, name.value); localStorage.removeItem(LAST); state = blank(); m.hidden = true; renderLibrary(); } catch (e) { err.textContent = String(e); } };
+  foot.append(err, cancel, ok); box.append(l1, l2, foot); m.append(box); m.hidden = false; name.focus();
+}
+
+/* ---------- settings ---------- */
+const MODELS = ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-fable-5-1'];
+async function renderSettings() {
+  const box = $('#settings'); box.replaceChildren();
+  const head = el('div', { className: 'lib-head' }); head.append(el('h1', { textContent: 'Settings' })); box.append(head);
+  let cfg; try { cfg = await store.settings.get(); } catch (e) { box.append(el('p', { className: 'lib-empty', textContent: 'Could not read settings: ' + e })); return; }
+  let ws = null; try { ws = await store.ws.info(); } catch {}
+
+  // Workspace
+  const w = el('section', { className: 'set-sec' });
+  w.append(el('h2', { textContent: 'Default data folder' }), el('p', { className: 'note', textContent: 'The workspace the app opens with. Documents, diagrams and shared files live inside it.' }));
+  const wsel = el('select');
+  if (ws) { for (const x of ws.workspaces) wsel.append(el('option', { value: x.path, textContent: `${x.name}  —  ${x.path}` })); wsel.value = ws.path; }
+  wsel.append(el('option', { value: '__new', textContent: 'New or existing folder…' }));
+  wsel.onchange = async () => { if (wsel.value === '__new') { wsel.value = ws ? ws.path : ''; newWorkspace(); return; } try { await store.ws.use(wsel.value); localStorage.removeItem(LAST); state = blank(); renderSettings(); } catch (e) { alert(e); } };
+  const wl = el('label', { textContent: 'Workspace' }); wl.append(wsel); w.append(wl);
+  box.append(w);
+
+  // Agent
+  const a = el('section', { className: 'set-sec' });
+  a.append(el('h2', { textContent: 'Coach agent (ACP)' }), el('p', { className: 'note', textContent: 'The coach talks to an agent over the Agent Client Protocol. Claude Code is bundled and uses your Claude login. Any other ACP agent (Codex, Gemini CLI, Devin when Cognition ships an ACP agent) can be used by giving its command.' }));
+  const agent = el('select'); agent.append(el('option', { value: 'claude', textContent: 'Claude Code (bundled)' }), el('option', { value: 'custom', textContent: 'Custom ACP agent command' })); agent.value = cfg.agent || 'claude';
+  const al = el('label', { textContent: 'Agent' }); al.append(agent);
+  const cmd = el('input', { type: 'text', value: cfg.command || '', placeholder: '/usr/local/bin/codex-acp  or  /path/to/devin-acp' });
+  const args = el('input', { type: 'text', value: cfg.args || '', placeholder: 'extra arguments, separated by spaces' });
+  const cl = el('label', { textContent: 'Command' }); cl.append(cmd); const argl = el('label', { textContent: 'Arguments' }); argl.append(args);
+  const custom = el('div', { style: 'display:flex;flex-direction:column;gap:12px' }); custom.append(cl, argl, el('p', { className: 'note', textContent: 'Examples: npx -y @agentclientprotocol/codex-acp (command: npx, arguments: -y @agentclientprotocol/codex-acp). The agent must speak ACP over stdio.' }));
+  const syncAgent = () => { custom.hidden = agent.value !== 'custom'; }; agent.onchange = syncAgent; syncAgent();
+  a.append(al, custom);
+  box.append(a);
+
+  // Model, effort, skills
+  const m = el('section', { className: 'set-sec' });
+  m.append(el('h2', { textContent: 'Model and skills' }));
+  const model = el('input', { type: 'text', value: cfg.model || '', placeholder: 'claude-opus-5-5' }); model.setAttribute('list', 'models');
+  const dl = el('datalist', { id: 'models' }); for (const x of MODELS) dl.append(el('option', { value: x }));
+  const ml = el('label', { textContent: 'Model (a Claude model id for Claude Code; for another agent, a model id it accepts)' }); ml.append(model, dl);
+  const effort = el('select'); for (const x of ['low', 'medium', 'high', 'xhigh', 'max']) effort.append(el('option', { value: x, textContent: x })); effort.value = cfg.effort || 'medium';
+  const efl = el('label', { textContent: 'Effort (Claude Code): how hard the model thinks per review; higher is slower and costlier' }); efl.append(effort);
+  const skills = el('input', { type: 'text', value: (cfg.skills || []).join(', '), placeholder: 'e.g. docx, pdf, my-team-style' });
+  const sl = el('label', { textContent: 'Skills to preload (Claude Code skill names, separated by commas)' }); sl.append(skills);
+  const mine = el('input', { type: 'checkbox', checked: !!cfg.useMySettings });
+  const minel = el('label', { className: 'row' }); minel.append(mine, el('span', { textContent: 'Load my Claude Code user settings (~/.claude: skills, plugins, CLAUDE.md). Off keeps the coach isolated.' }));
+  m.append(ml, efl, sl, minel);
+  box.append(m);
+
+  // Style rules (workspace)
+  const st = el('section', { className: 'set-sec' });
+  st.append(el('h2', { textContent: 'Style rules' }), el('p', { className: 'note', textContent: 'Your house style, applied in every review, draft and Lint. Stored in the workspace as style.md so the whole team can share it. Empty uses the built-in rules.' }));
+  const styleBox = el('textarea', { rows: 12, style: 'background:var(--canvas);border:1px solid var(--line-strong);border-radius:8px;color:var(--ink);font:12.5px/1.5 var(--mono);padding:10px;outline:none;resize:vertical' });
+  try { styleBox.value = (await store.style.get()) || ''; } catch {}
+  styleBox.placeholder = DEFAULT_STYLE;
+  const resetStyle = el('button', { type: 'button', className: 'btn', textContent: 'Fill with the built-in rules' }); resetStyle.onclick = () => { styleBox.value = DEFAULT_STYLE; };
+  st.append(styleBox, resetStyle);
+  box.append(st);
+
+  const foot = el('div', { className: 'set-foot' });
+  const saveBtn = el('button', { type: 'button', className: 'btn primary', textContent: 'Save settings' });
+  const msg = el('span', { className: 'msg' }), err = el('span', { className: 'err' });
+  saveBtn.onclick = async () => {
+    msg.textContent = ''; err.textContent = '';
+    try {
+      await store.settings.set({ agent: agent.value, command: cmd.value.trim(), args: args.value.trim(), model: model.value.trim(), effort: effort.value, skills: skills.value.split(',').map(x => x.trim()).filter(Boolean), useMySettings: mine.checked });
+      await store.style.set(styleBox.value); styleRules = styleBox.value;
+      msg.textContent = 'Saved. The next coach request uses these settings.';
+    } catch (e) { err.textContent = String(e); }
+  };
+  const back = el('button', { type: 'button', className: 'btn', textContent: 'Back to the document' }); back.onclick = () => showView(state.id ? 'doc' : 'library');
+  foot.append(saveBtn, back, msg, err); box.append(foot);
+}
+$('#settings-btn').onclick = () => showView('settings');
+
+/* ---------- document type router (the four questions) ---------- */
+const ROUTER = [
+  { q: 'Is the decision already made, and you need to record it for people who come later?', yes: 'adr' },
+  { q: 'Does the reader need to act under pressure, with exact steps?', yes: 'runbook' },
+  { q: 'Did an incident happen that the team must learn from?', yes: 'incident' },
+  { q: 'Does the reader need to approve or fund a direction before anyone designs it?', yes: 'onepager' },
+  { q: 'Is the customer outcome the hard part, rather than the system?', yes: 'prfaq' },
+  { q: 'Does the change cross team boundaries or set a shared standard?', yes: 'rfc' },
+  { q: 'Do several decisions share one diagnosis over the next year or two?', yes: 'strategy' },
+  { q: 'Is a service about to change production risk and need sign-off?', yes: 'orr' },
+];
+function openRouter(onPick) {
+  const m = $('#import'); m.replaceChildren();
+  const box = el('div', { className: 'box router' });
+  box.append(el('h2', { textContent: 'Which document?' }), el('p', { className: 'note', textContent: 'Pick the type from the reader’s next action, not from the topic. Answer top to bottom; the first yes decides.' }));
+  const q = el('div', { className: 'q' }); box.append(q);
+  const foot = el('div', { className: 'foot' }); const cancel = el('button', { type: 'button', className: 'btn', textContent: 'Cancel' }); cancel.onclick = () => { m.hidden = true; }; foot.append(cancel); box.append(foot);
+  let i = 0;
+  const finish = type => { q.replaceChildren(el('div', { className: 'result', innerHTML: `<b>${esc(TEMPLATES[type].name)}</b>. ${esc(TEMPLATES[type].sections.length)} sections: ${esc(TEMPLATES[type].sections.map(s => s.title).join(', '))}.` })); const use = el('button', { type: 'button', className: 'btn primary', textContent: 'Use ' + TEMPLATES[type].name }); use.onclick = () => { onPick(type); m.hidden = true; }; foot.prepend(use); };
+  const ask = () => {
+    if (i >= ROUTER.length) return finish('design');
+    q.replaceChildren(el('p', { textContent: `${i + 1}. ${ROUTER[i].q}` }));
+    const ans = el('div', { className: 'ans' });
+    const yes = el('button', { type: 'button', className: 'btn primary', textContent: 'Yes' }); yes.onclick = () => finish(ROUTER[i].yes);
+    const no = el('button', { type: 'button', className: 'btn', textContent: 'No' }); no.onclick = () => { i++; ask(); };
+    ans.append(yes, no); q.append(ans);
+  };
+  ask();
+  m.append(box); m.hidden = false;
+}
+
+/* ---------- import: Markdown, text, Word, Confluence ---------- */
+let mammothReady = null;
+function loadMammoth() { return mammothReady ||= new Promise((res, rej) => { if (window.mammoth) return res(); const js = el('script', { src: 'vendor/mammoth.js' }); js.onload = () => res(); js.onerror = () => { mammothReady = null; rej(new Error('The Word converter could not be loaded.')); }; document.head.append(js); }); }
+async function importInto(title, templateId, apply) {
+  await createDoc(title, templateId);
+  await apply();
+  state.docJson = doc.json();
+  if (!titles().includes(state.current) && !tpl().sections.some(x => x.title === state.current)) state.current = firstSection();
+  save(); renderAll(); showView('doc');
+}
+async function importFile(f, templateId) {
+  const name = f.name.replace(/\.[^.]+$/, '');
+  if (/\.docx$/i.test(f.name)) {
+    await loadMammoth();
+    const { value: html } = await window.mammoth.convertToHtml({ arrayBuffer: await f.arrayBuffer() });
+    return importInto(name, templateId, () => doc.setHTML(html));
+  }
+  if (/\.html?$/i.test(f.name)) return importInto(name, templateId, async () => doc.setHTML(await f.text()));
+  const text = await f.text();
+  const m = text.match(/^#\s+(.+)\n/);
+  return importInto(m ? m[1].trim() : name, templateId, () => doc.setMarkdown(m ? text.slice(m[0].length) : text));
+}
+async function importConfluence(url, email, token, templateId) {
+  const r = await store.confluence(url, email, token);
+  const html = String(r.html || '').replace(/<img\b[^>]*src="(?!data:)[^"]*"[^>]*>/gi, '<p><em>[image from Confluence not imported]</em></p>');
+  return importInto(r.title || 'Confluence page', templateId, () => doc.setHTML(html));
+}
+function openImport() {
+  const m = $('#import'); m.replaceChildren();
+  const box = el('div', { className: 'box' });
+  box.append(el('h2', { textContent: 'Import a document' }));
+  const tabs = el('div', { className: 'tabs' }); const tFile = el('button', { type: 'button', textContent: 'Markdown, text or Word file' }); const tConf = el('button', { type: 'button', textContent: 'Confluence page' }); tabs.append(tFile, tConf); box.append(tabs);
+  const pick = el('select'); for (const [id, t] of Object.entries(TEMPLATES)) pick.append(el('option', { value: id, textContent: t.name })); pick.value = state.templateId || 'design';
+  const lt = el('label', { textContent: 'Review it as a' }); lt.append(pick);
+  const body = el('div'); const foot = el('div', { className: 'foot' }); const err = el('span', { className: 'err' });
+  const cancel = el('button', { type: 'button', className: 'btn', textContent: 'Cancel' }); cancel.onclick = () => { m.hidden = true; };
+  const go = el('button', { type: 'button', className: 'btn primary', textContent: 'Import' });
+  foot.append(err, cancel, go);
+  let mode = 'file', file = null;
+  const drop = el('label', { className: 'drop', textContent: 'Drop a .md, .txt, .html or .docx file here, or click to choose' });
+  const fin = el('input', { type: 'file', accept: '.md,.markdown,.txt,.html,.htm,.docx' }); drop.append(fin);
+  fin.onchange = () => { file = fin.files[0]; drop.firstChild.textContent = file ? file.name : 'Drop a file here, or click to choose'; };
+  drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); }; drop.ondragleave = () => drop.classList.remove('over');
+  drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); file = e.dataTransfer.files[0]; if (file) drop.firstChild.textContent = file.name; };
+  const url = el('input', { type: 'text', placeholder: 'https://your-site.atlassian.net/wiki/spaces/ENG/pages/123456/Title' });
+  const email = el('input', { type: 'email', placeholder: 'you@company.com', value: localStorage.getItem('docu-coach-atlassian-email') || '' });
+  const token = el('input', { type: 'password', placeholder: 'Atlassian API token', value: localStorage.getItem('docu-coach-atlassian-token') || '' });
+  const remember = el('input', { type: 'checkbox', checked: !!localStorage.getItem('docu-coach-atlassian-token') });
+  const lu = el('label', { textContent: 'Page link' }); lu.append(url); const le = el('label', { textContent: 'Atlassian email' }); le.append(email); const lk = el('label', { textContent: 'API token (id.atlassian.com → Security → API tokens)' }); lk.append(token);
+  const lr = el('label', { style: 'flex-direction:row;align-items:center;gap:8px' }); lr.append(remember, el('span', { textContent: 'Remember on this Mac (stored in the app, not encrypted)' }));
+  const note = el('p', { className: 'note', textContent: 'Imports the page text, headings, lists, tables and code. Images stay in Confluence. Works with Confluence Cloud.' });
+  const show = which => { mode = which; tFile.setAttribute('aria-pressed', which === 'file'); tConf.setAttribute('aria-pressed', which === 'conf'); body.replaceChildren(...(which === 'file' ? [drop] : [lu, le, lk, lr, note])); err.textContent = ''; };
+  tFile.onclick = () => show('file'); tConf.onclick = () => show('conf'); show('file');
+  go.onclick = async () => {
+    err.textContent = ''; go.disabled = true; go.textContent = 'Importing…';
+    try {
+      if (mode === 'file') { if (!file) throw new Error('Choose a file first.'); await importFile(file, pick.value); }
+      else {
+        if (!url.value.trim() || !email.value.trim() || !token.value.trim()) throw new Error('Fill in the link, the email and the token.');
+        if (remember.checked) { localStorage.setItem('docu-coach-atlassian-email', email.value.trim()); localStorage.setItem('docu-coach-atlassian-token', token.value.trim()); } else { localStorage.removeItem('docu-coach-atlassian-email'); localStorage.removeItem('docu-coach-atlassian-token'); }
+        await importConfluence(url.value, email.value, token.value, pick.value);
+      }
+      m.hidden = true;
+    } catch (e) { err.textContent = String(e.message || e); }
+    go.disabled = false; go.textContent = 'Import';
+  };
+  box.append(body, lt, foot); m.append(box); m.hidden = false;
+}
+$('#import').addEventListener('mousedown', e => { if (e.target === $('#import')) $('#import').hidden = true; });
+$('#home').onclick = () => showView('library');
+$('#ws-crumb').onclick = () => showView('library');
+store.ws.info().then(i => { $('#ws-crumb').textContent = i.name; }).catch(() => {});
+store.style.get().then(t => { styleRules = t || ''; }).catch(() => {});
+
+/* ---------- images and diagrams ---------- */
+let diagramReady = null;
+function loadDiagram() {
+  if (diagramReady) return diagramReady;
+  diagramReady = new Promise((res, rej) => {
+    // Excalidraw reads this when its module loads, so it must be set before the script is added.
+    window.EXCALIDRAW_ASSET_PATH = new URL('vendor/excalidraw/', location.href).href;
+    const css = el('link', { rel: 'stylesheet', href: 'vendor/excalidraw/index.css' });
+    const js = el('script', { src: 'vendor/diagram.js' });
+    js.onload = async () => { try { window.Diagram.library = await store.library.load(); } catch { window.Diagram.library = []; } window.Diagram.onLibrary = items => store.library.save(items).catch(() => {}); res(); };
+    js.onerror = () => { diagramReady = null; rej(new Error('The diagram editor could not be loaded.')); };
+    document.head.append(css, js);
+  });
+  return diagramReady;
+}
+async function openDiagram(pos, scene) {
+  try { await loadDiagram(); } catch (e) { alert(e.message); return; }
+  const r = await window.Diagram.open(scene || null);
+  if (!r) { doc.editor.commands.focus(); return; }
+  let file = null;
+  try { if (inApp) file = await store.asset(state.id, `diagram-${Date.now()}.svg`, btoa(unescape(encodeURIComponent(r.svg)))); } catch (e) { console.error(e); }
+  if (pos != null) doc.updateDiagram(pos, r.svg, r.scene, file); else doc.insertDiagram(r.svg, r.scene, file);
+  save();
+}
+async function addImage(f, pos) {
+  if (f.size > 8 * 1048576) { alert('Images over 8 MB are too big for a document.'); return; }
+  const data = await readAs(f, 'base64');
+  let file = null;
+  try { if (inApp) file = await store.asset(state.id, `${Date.now()}-${f.name || 'image.png'}`, data); } catch (e) { console.error(e); }
+  doc.insertImage({ src: `data:${f.type};base64,${data}`, file, alt: (f.name || 'image').replace(/\.[^.]+$/, '') }, pos);
+  save();
+}
+
+/* ---------- guide ---------- */
+async function loadGuide() {
+  try {
+    const text = await (await fetch('guide.md')).text();
+    const body = text.replace(/^# .*\n/, '');
+    $('#guide').replaceChildren(el('h1', { className: 'notes-head', textContent: 'Writing guide' }), el('p', { className: 'notes-sub', textContent: 'The standard the coach reviews against. Short on purpose.' }), md(body));
+  } catch (e) { $('#guide').textContent = 'The guide could not be loaded: ' + e; }
+}
+
+/* ---------- context files ---------- */
+const TEXTY = /\.(txt|md|markdown|csv|tsv|json|ya?ml|toml|log|xml|html?|js|ts|py|rs|go|java|rb|sh|sql|ini|cfg)$/i;
+const fmtSize = n => n < 1024 ? n + ' B' : n < 1048576 ? Math.round(n / 1024) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
+async function addFiles(files) {
+  for (const f of files) {
+    const a = { id: uid(), name: f.name, size: f.size, kind: 'text', text: '', note: '' };
+    try {
+      if (f.type.startsWith('image/')) {
+        if (f.size > 5 * 1048576) throw new Error('Image is over 5 MB.');
+        a.kind = 'image'; a.mime = f.type; images[a.id] = await readAs(f, 'base64'); a.note = 'kept for this session only';
+      } else if (/\.pdf$/i.test(f.name) || f.type === 'application/pdf') {
+        a.kind = 'pdf';
+        if (!window.__TAURI__) throw new Error('PDF text extraction needs the desktop app.');
+        a.text = await window.__TAURI__.core.invoke('extract_pdf', { data: await readAs(f, 'base64') });
+      } else if (TEXTY.test(f.name) || f.type.startsWith('text/') || !f.type) {
+        if (f.size > 2 * 1048576) throw new Error('Text file is over 2 MB.');
+        a.text = await readAs(f, 'text');
+      } else throw new Error('Unsupported file type.');
+    } catch (e) { a.error = String(e.message || e); }
+    state.attachments.push(a);
+  }
+  try { save(); } catch {}
+  renderContext();
+}
+const readAs = (f, how) => new Promise((res, rej) => { const r = new FileReader(); r.onerror = () => rej(new Error('Could not read the file.')); r.onload = () => res(how === 'base64' ? String(r.result).split(',')[1] : String(r.result)); how === 'base64' ? r.readAsDataURL(f) : r.readAsText(f); });
+function renderContext() {
+  const box = $('#chips'); box.replaceChildren();
+  const ok = state.attachments.filter(a => !a.error);
+  renderMeta();
+  if (!state.attachments.length) box.append(el('div', { className: 'context-empty', textContent: 'Add notes, specs, tickets, CSVs, screenshots or PDFs, or drop them onto the document. The coach reads them with your text.' }));
+  store.files.list().then(files => { if (!files.length) return; const w = el('div', { className: 'ctx-ws', textContent: 'Workspace files' }); for (const f of files) { if (state.attachments.some(a => a.name === f.name)) continue; const r = el('div', { className: 'frow' }); r.append(el('span', { className: 'nm', textContent: f.name })); const b = el('button', { type: 'button', textContent: 'Attach' }); b.onclick = () => attachWorkspaceFile(f.name); r.append(b); w.append(r); } if (w.childElementCount > 1) $('#chips').append(w); }).catch(() => {});
+  if (!state.attachments.length) return;
+  for (const a of state.attachments) {
+    const missingImage = a.kind === 'image' && !images[a.id];
+    const chip = el('span', { className: 'chip' + (a.error || missingImage ? ' bad' : ''), title: a.error || (missingImage ? 'Image not kept after restart; add it again.' : a.note || (a.text ? words(a.text) + ' words' : '')) });
+    chip.append(el('span', { className: 'nm', textContent: a.name }), el('small', { textContent: a.error ? 'failed' : missingImage ? 'missing' : a.kind === 'image' ? 'image' : fmtSize(a.size) }));
+    const x = el('button', { type: 'button', textContent: '×', title: 'Remove' });
+    x.onclick = () => { state.attachments = state.attachments.filter(b => b !== a); delete images[a.id]; save(); renderContext(); };
+    chip.append(x); box.append(chip);
+  }
+}
+$('#files').onchange = e => { addFiles([...e.target.files]); e.target.value = ''; };
+const desk = $('#desk');
+desk.addEventListener('dragover', e => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); desk.classList.add('drop'); } });
+desk.addEventListener('dragleave', () => desk.classList.remove('drop'));
+desk.addEventListener('drop', e => { desk.classList.remove('drop'); if (e.dataTransfer.files.length) { e.preventDefault(); addFiles([...e.dataTransfer.files]); } });
+
+/* ---------- export ---------- */
+const toMarkdown = () => `# ${state.title || 'Untitled ' + tpl().name}\n\n${doc.markdown()}\n`;
+
+/* ---------- wiring ---------- */
+const sel = $('#template');
+for (const [id, t] of Object.entries(TEMPLATES)) sel.append(el('option', { value: id, textContent: t.name }));
+sel.onchange = () => {
+  state.templateId = sel.value;
+  // An empty document takes the new template's sections; written text is never thrown away.
+  state.current = firstSection();
+  save(); renderAll();
+};
+document.querySelectorAll('.modes button').forEach(b => b.onclick = () => setMode(b.dataset.mode));
+const input = $('#input');
+$('#ask').onsubmit = e => { e.preventDefault(); if (busy) return; send(input.value); input.value = ''; grow(input, 140); };
+input.oninput = () => grow(input, 140);
+input.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); $('#ask').requestSubmit(); } };
+$('#review-all').onclick = () => { setMode('review'); send(panelReviewPrompt(), { label: 'Panel review: ' + (tpl().readers || ['Staff peer', 'Skeptical VP', 'Future maintainer']).slice(0, 3).join(', ') }); };
+$('#copy').onclick = async () => {
+  const b = $('#copy');
+  $('#export').open = false;
+  try { await navigator.clipboard.writeText(toMarkdown()); b.textContent = 'Copied'; }
+  catch { b.textContent = 'Copy failed'; }
+  setTimeout(() => b.textContent = 'Copy as Markdown', 1500);
+};
+$('#download').onclick = async () => {
+  const b = $('#download');
+  $('#export').open = false;
+  try {
+    const path = await window.__TAURI__.core.invoke('save_markdown', { name: state.title || 'document', text: toMarkdown() });
+    b.textContent = 'Saved to Downloads'; b.title = path;
+  } catch (e) { b.textContent = 'Save failed'; b.title = String(e); }
+  setTimeout(() => b.textContent = 'Save as .md to Downloads', 2500);
+};
+$('#new').onclick = () => createDoc('', state.templateId);
+function renderAll() { sel.value = state.templateId; syncPaper(); renderOutline(); renderCoachBar(); renderLog(); setFocus(!!state.focus); renderComments(); renderContext(); setThread(!!state.threadOpen && state.chat.length > 0); }
+$('#thread-hide').onclick = () => setThread(false);
+$('#thread-show').onclick = () => setThread(true);
+$('#focus-btn').onclick = () => setFocus(!state.focus);
+document.addEventListener('mousedown', e => { for (const d of [$('#export'), $('#context')]) if (d.open && !d.contains(e.target)) d.open = false; });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { $('#export').open = false; $('#context').open = false; } });
+document.addEventListener('keydown', e => { if ((e.metaKey || e.ctrlKey) && e.key === '\\') { e.preventDefault(); setFocus(!state.focus); } });
+buildPaper();
+(async () => {
+  const last = localStorage.getItem(LAST);
+  if (last) { try { await openDoc(last); return; } catch {} }
+  const docs = await store.list().catch(() => []);
+  if (docs.length) await openDoc(docs[0].id); else showView('library');
+})();
+setInterval(renderMeta, 60000);
+</script>
+</body>
+</html>

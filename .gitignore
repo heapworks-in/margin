@@ -1,0 +1,7 @@
+node_modules/
+agent/node_modules/
+.superpowers/
+src-tauri/target/
+src-tauri/gen/
+static/vendor/diagram.js
+static/vendor/excalidraw/

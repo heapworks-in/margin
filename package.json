@@ -1,0 +1,26 @@
+{
+  "private": true,
+  "devDependencies": {
+    "@excalidraw/excalidraw": "0.18.1",
+    "@tiptap/core": "3.32.2",
+    "@tiptap/extension-code-block-lowlight": "3.32.2",
+    "@tiptap/extension-image": "3.32.2",
+    "@tiptap/extension-list": "3.32.2",
+    "@tiptap/extension-table": "3.32.2",
+    "@tiptap/extensions": "3.32.2",
+    "@tiptap/markdown": "3.32.2",
+    "@tiptap/pm": "3.32.2",
+    "@tiptap/starter-kit": "3.32.2",
+    "@tiptap/suggestion": "3.32.2",
+    "esbuild": "0.28.2",
+    "lowlight": "3.3.0",
+    "mammoth": "1.11.0",
+    "react": "19.1.10",
+    "react-dom": "19.1.10"
+  },
+  "scripts": {
+    "build:editor": "esbuild editor/main.js --bundle --minify --format=iife --target=safari16 --outfile=static/vendor/editor.js",
+    "build:diagram": "esbuild editor/diagram.jsx --bundle --minify --format=iife --jsx=automatic --define:process.env.NODE_ENV=\"\\\"production\\\"\" --target=safari16 --outfile=static/vendor/diagram.js && mkdir -p static/vendor/excalidraw && cp -R node_modules/@excalidraw/excalidraw/dist/prod/fonts static/vendor/excalidraw/ && sed 's#\\.\\./fonts/#fonts/#g' node_modules/@excalidraw/excalidraw/dist/prod/index.css > static/vendor/excalidraw/index.css",
+    "build": "npm run build:editor && npm run build:diagram"
+  }
+}
