@@ -37,12 +37,13 @@ A private writing coach for technical documents, as a macOS desktop app. You wri
 
 ```bash
 brew tap heapworks-in/tap
-brew install --cask --no-quarantine margin
+brew install --cask margin
 ```
 
 Or download the `.dmg` from the [releases page](https://github.com/heapworks-in/margin/releases). Needs macOS on
 Apple Silicon, Node.js, and Claude Code logged in (`claude`, then `/login`) for the bundled coach. The build is not
-signed yet: `--no-quarantine` lets Gatekeeper open it; with the DMG, right-click the app and choose *Open* the first time.
+signed yet, so macOS warns once: right-click `Margin.app` and choose *Open*, or run
+`xattr -dr com.apple.quarantine /Applications/Margin.app`.
 
 ## Workspaces
 
