@@ -22,6 +22,17 @@ A private writing coach for technical documents, as a macOS desktop app. You wri
 - No side panels: the coach is a chat bar at the bottom (the conversation folds up above it and shows the current section's status), a Word-style status bar at the very bottom carries the insights (page, words, reading time, sections written and ready, open notes, last review, Lessons), and context files live under **+ Context** in the top bar or by dropping files onto the document. `⌘\` hides the coach and the bars. Select any sentence and press *✦ Ask coach* to send just that part.
 - Click a draft to put it into your doc (with undo). *Export* copies Markdown or saves a `.md` file to Downloads.
 
+## Install
+
+```bash
+brew tap heapworks-in/tap
+brew install --cask margin
+```
+
+Or download the `.dmg` from the [releases page](https://github.com/heapworks-in/margin/releases). Needs macOS on
+Apple Silicon, Node.js, and Claude Code logged in (`claude`, then `/login`) for the bundled coach. The build is not
+signed yet: the cask clears the quarantine flag; with the DMG, right-click the app and choose *Open* the first time.
+
 ## Workspaces
 
 A workspace is a folder (default `~/Documents/Margin` (an existing `~/Documents/Margin` keeps being used)) with `workspace.json`, `documents/`, `diagrams/` and
