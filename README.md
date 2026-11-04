@@ -33,6 +33,8 @@ A private writing coach for technical documents, as a macOS desktop app. You wri
 - No side panels: the coach is a chat bar at the bottom (the conversation folds up above it and shows the current section's status), a Word-style status bar at the very bottom carries the insights (page, words, reading time, sections written and ready, open notes, last review, Lessons), and context files live under **+ Context** in the top bar or by dropping files onto the document. `⌘\` hides the coach and the bars. Select any sentence and press *✦ Ask coach* to send just that part.
 - Click a draft to put it into your doc (with undo). *Export* copies Markdown or saves a `.md` file to Downloads.
 
+**Site and manual:** https://heapworks-in.github.io/margin (the same manual is in the app under *Help*).
+
 ## Install
 
 ```bash

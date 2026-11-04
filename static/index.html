@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Margin</title>
 <link href="vendor/fonts/fonts.css" rel="stylesheet">
-<script src="vendor/editor.js?v=39"></script>
+<script src="vendor/editor.js?v=40"></script>
 <style>
 :root{
   color-scheme:dark;
@@ -446,6 +446,7 @@ mark.c-mark.active{box-shadow:0 0 0 2px var(--accent-soft);filter:saturate(1.4)}
 /* guide view */
 .guide .md{font-size:15px;line-height:1.65;color:var(--ink-2)}
 .guide .md h4{font:600 19px/1.3 var(--ui);color:var(--ink);margin:28px 0 8px}
+.guide .md h5{font:600 15.5px/1.3 var(--ui);color:var(--ink);margin:18px 0 6px}
 .guide .md p{margin:0 0 12px}
 .guide .md ul,.guide .md ol{margin:0 0 12px;padding-left:22px}
 .guide .md li{margin:4px 0}
@@ -515,6 +516,7 @@ mark.c-mark.active{box-shadow:0 0 0 2px var(--accent-soft);filter:saturate(1.4)}
     <button type="button" role="tab" data-view="doc">Document</button>
     <button type="button" role="tab" data-view="notes">Notes<span class="n" id="notes-n"></span></button>
     <button type="button" role="tab" data-view="guide">Guide</button>
+    <button type="button" role="tab" data-view="help">Help</button>
   </div>
   <span class="spacer" data-tauri-drag-region></span>
   <span class="saved" id="saved"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><circle cx="6" cy="6" r="5.5" stroke="currentColor"/><path d="M3.5 6.2l1.8 1.8 3.2-3.6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>Changes saved</span>
@@ -551,6 +553,7 @@ mark.c-mark.active{box-shadow:0 0 0 2px var(--accent-soft);filter:saturate(1.4)}
         <article id="paper" class="page"></article>
         <section id="notes" class="page" hidden></section>
         <section id="guide" class="page guide" hidden></section>
+        <section id="help" class="page guide" hidden></section>
       </div>
     </div>
   </section>
@@ -802,9 +805,11 @@ function showView(v) {
   $('#paper').hidden = v !== 'doc';
   $('#notes').hidden = v !== 'notes';
   $('#guide').hidden = v !== 'guide';
+  $('#help').hidden = v !== 'help';
   document.querySelector('.app').classList.toggle('in-library', v === 'library' || v === 'settings');
   if (v === 'library') renderLibrary();
   if (v === 'guide' && !$('#guide').childElementCount) loadGuide();
+  if (v === 'help' && !$('#help').childElementCount) loadHelp();
 
 }
 function buildPaper() {
@@ -1037,7 +1042,7 @@ function md(t) {
       const tag = /^\s*\d+\./.test(lines[0]) ? 'ol' : 'ul';
       return `<${tag}>${lines.map(l => '<li>' + inline(l.replace(/^\s*([-*]|\d+\.)\s/, '')) + '</li>').join('')}</${tag}>`;
     }
-    if (/^#{1,4}\s/.test(p)) return '<h4>' + inline(p.replace(/^#+\s/, '')) + '</h4>';
+    if (/^#{1,4}\s/.test(p)) { const lvl = p.match(/^#+/)[0].length; const tag = lvl <= 2 ? 'h4' : 'h5'; return `<${tag}>` + inline(p.replace(/^#+\s/, '')) + `</${tag}>`; }
     return '<p>' + inline(p).replace(/\n/g, '<br>') + '</p>';
   }).join('');
   return el('div', { className: 'md', innerHTML: html });
@@ -1877,6 +1882,13 @@ async function placeDiagram(d, at) {
 }
 
 /* ---------- guide ---------- */
+async function loadHelp() {
+  try {
+    const text = await (await fetch('help.md')).text();
+    const body = text.replace(/^# .*\n/, '');
+    $('#help').replaceChildren(el('h1', { className: 'notes-head', textContent: 'How to use Margin' }), el('p', { className: 'notes-sub', textContent: 'One document, from blank page to ship it. Also at heapworks-in.github.io/margin.' }), md(body));
+  } catch (e) { $('#help').textContent = 'The help could not be loaded: ' + e; }
+}
 async function loadGuide() {
   try {
     const text = await (await fetch('guide.md')).text();
