@@ -55,7 +55,7 @@ pre code{background:none;border:0;padding:0}
 .specimen p{font-size:15px;line-height:1.75;color:var(--ink-2);margin:0 0 10px;max-width:60ch}
 .specimen mark{background:none;color:inherit;border-bottom:2px solid;padding-bottom:1px}
 .specimen mark.english{border-color:var(--english)}.specimen mark.fact{border-color:var(--fact)}.specimen mark.missing{border-color:var(--missing)}
-.specimen .note{position:absolute;right:22px;bottom:70px;width:300px;background:var(--raise);border:1px solid var(--line-strong);border-radius:12px;padding:12px 14px;box-shadow:0 20px 50px -20px #000;font-size:13px;line-height:1.5;color:var(--ink-2)}
+.specimen .note{width:min(330px,100%);margin:4px 0 6px auto;background:var(--raise);border:1px solid var(--line-strong);border-radius:12px;padding:12px 14px;box-shadow:0 20px 50px -20px #000;font-size:13px;line-height:1.5;color:var(--ink-2)}
 .specimen .note .k{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12px;color:var(--muted)}
 .specimen .note .k b{color:var(--fact);font-weight:600}
 .specimen .note .k span{margin-left:auto;border:1px solid var(--line);border-radius:999px;padding:0 7px;font-size:11px}
@@ -63,8 +63,8 @@ pre code{background:none;border:0;padding:0}
 .specimen .note .acts{display:flex;gap:6px;margin-top:10px}
 .specimen .note .acts em{font-style:normal;font-size:12px;border:1px solid var(--line-strong);border-radius:6px;padding:3px 9px;color:var(--ink-2)}
 .specimen .note .acts em:first-child{background:var(--accent);border-color:var(--accent);color:#0B1326;font-weight:600}
-.specimen .status{display:flex;gap:0;height:30px;align-items:center;border-top:1px solid var(--line);font-size:11.5px;color:var(--muted);padding:0 10px;background:var(--panel)}
-.specimen .status span{padding:0 10px;border-right:1px solid var(--line)}
+.specimen .status{display:flex;gap:0;height:30px;align-items:center;border-top:1px solid var(--line);font-size:11.5px;color:var(--muted);padding:0 10px;background:var(--panel);white-space:nowrap;overflow:hidden}
+.specimen .status span{padding:0 10px;border-right:1px solid var(--line);flex:none}
 .specimen .status span:last-child{border:0;margin-left:auto}
 .specimen .status b{color:var(--ink);font-weight:600}
 .specimen .status .ship{color:var(--missing);font-weight:700}
@@ -111,7 +111,6 @@ footer a{color:var(--ink-2)}
   .manual{grid-template-columns:1fr;gap:20px}
   .toc{position:static;max-height:none;display:flex;flex-wrap:wrap;gap:4px 14px}
   .toc a{border:0;padding:3px 0}
-  .specimen .note{position:static;width:auto;margin:14px 0 0}
   .top nav a:not(.cta){display:none}
 }
 @media (prefers-reduced-motion:no-preference){
