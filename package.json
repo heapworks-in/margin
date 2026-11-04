@@ -22,6 +22,6 @@
     "build:editor": "esbuild editor/main.js --bundle --minify --format=iife --target=safari16 --outfile=static/vendor/editor.js",
     "build:diagram": "esbuild editor/diagram.jsx --bundle --minify --format=iife --jsx=automatic --define:process.env.NODE_ENV=\"\\\"production\\\"\" --target=safari16 --outfile=static/vendor/diagram.js && mkdir -p static/vendor/excalidraw && cp -R node_modules/@excalidraw/excalidraw/dist/prod/fonts static/vendor/excalidraw/ && sed 's#\\.\\./fonts/#fonts/#g' node_modules/@excalidraw/excalidraw/dist/prod/index.css > static/vendor/excalidraw/index.css",
     "build": "npm run build:editor && npm run build:diagram && npm run build:docs",
-    "build:docs": "cp static/help.md docs/help.md"
+    "build:docs": "cp static/help.md docs/help.md && rsync -a --delete static/ docs/app/"
   }
 }

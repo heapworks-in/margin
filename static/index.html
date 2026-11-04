@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Margin</title>
 <link href="vendor/fonts/fonts.css" rel="stylesheet">
-<script src="vendor/editor.js?v=40"></script>
+<script src="vendor/editor.js?v=41"></script>
 <style>
 :root{
   color-scheme:dark;
@@ -394,6 +394,7 @@ mark.c-mark.active{box-shadow:0 0 0 2px var(--accent-soft);filter:saturate(1.4)}
 .diff{max-height:60vh;overflow:auto;overflow-wrap:anywhere;word-break:break-all;background:var(--canvas);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:0;font:12.5px/1.5 var(--mono);white-space:pre-wrap}
 .diff .add{color:var(--green)}.diff .del{color:var(--fact);text-decoration:line-through;opacity:.8}.diff .same{color:var(--muted)}
 .bubble .b-draw{color:var(--question)}
+html[data-demo] *,html[data-demo] *::before,html[data-demo] *::after{transition:none!important;animation:none!important}
 /* heading badge: the only coach element that lives in the text */
 .coach-inline{display:inline;user-select:none;-webkit-user-select:none}
 .hbadge{display:inline-flex;align-items:center;gap:5px;vertical-align:middle;margin-left:12px;padding:2px 8px 2px 6px;border-radius:999px;border:1px solid var(--line);background:var(--panel);font:600 11.5px/1.4 var(--ui);letter-spacing:0;color:var(--muted);cursor:pointer;opacity:.75;transition:opacity .15s,border-color .15s}
@@ -735,7 +736,7 @@ const store = inApp ? {
   load: async id => { const t = localStorage.getItem('docu-coach-doc:' + id); if (!t) throw new Error('not found'); return JSON.parse(t); },
   save: async (id, obj) => localStorage.setItem('docu-coach-doc:' + id, JSON.stringify(obj)),
   remove: async function (id) { localStorage.removeItem('docu-coach-doc:' + id); localStorage.setItem('docu-coach-index', JSON.stringify(this._index().filter(x => x !== id))); },
-  ws: { info: async () => ({ path: 'browser storage', name: 'Browser workspace', workspaces: [{ path: 'browser storage', name: 'Browser workspace', exists: true }] }), use: async () => { throw new Error('Only in the app.'); }, forget: async () => {} },
+  ws: { info: async () => { const name = localStorage.getItem('docu-coach-ws-name') || 'Browser workspace', path = localStorage.getItem('docu-coach-ws-name') ? '~/Documents/Margin' : 'browser storage'; return { path, name, workspaces: [{ path, name, exists: true }] }; }, use: async () => { throw new Error('Only in the app.'); }, forget: async () => {} },
   reveal: async () => {},
   asset: async (id, name) => name,
   diagrams: { _k: 'docu-coach-diagrams', list: async function () { return JSON.parse(localStorage.getItem(this._k) || '[]'); }, save: async function (name, svg, scene) { const l = (await this.list()).filter(d => d.name !== name); l.unshift({ name, svg, scene, updated: Date.now() }); localStorage.setItem(this._k, JSON.stringify(l)); return name; }, load: async function (name) { return (await this.list()).find(d => d.name === name); }, remove: async function (name) { localStorage.setItem(this._k, JSON.stringify((await this.list()).filter(d => d.name !== name))); } },
@@ -1987,7 +1988,139 @@ document.addEventListener('mousedown', e => { for (const d of [$('#export'), $('
 document.addEventListener('keydown', e => { if (e.key === 'Escape') { $('#export').open = false; $('#context').open = false; } });
 document.addEventListener('keydown', e => { if ((e.metaKey || e.ctrlKey) && e.key === '\\') { e.preventDefault(); setFocus(!state.focus); } });
 buildPaper();
+/* ---------- demo scenes (browser build only; used for the site's screenshots): ?demo=review|panel|rehearse|thesis|diagram|library|settings ---------- */
+const DEMO_MD = `## Context and problem
+
+The Payments API gets too many requests from a few clients at month end. p99 latency rise from 200 ms to 2.1 s for everyone, and the on-call engineer throttles clients by hand. Three incidents in the last quarter were caused by this.
+
+## Goals and non-goals
+
+- No single client can slow down the others.
+- p99 stays under 300 ms during the month-end peak.
+- Non-goal: billing or quota sales. Limits are an operational control, not a product.
+
+## Proposed design
+
+We propose a per-client token bucket in Redis. Each client gets 500 requests per second, refilled continuously. The limiter sit in the API gateway and answers 429 with a Retry-After header. Limits live in a config map and change without a deploy. If Redis is slow, the limiter fails open so no request is dropped.
+
+## Alternatives considered
+
+- Do nothing: three more incidents a quarter, and the on-call keeps throttling by hand.
+- Quotas at the load balancer: cheaper, but it cannot see the client id behind the shared gateway key.
+- Scale the API: about $18k a month more, for a peak that lasts two days.
+
+## Failure modes
+
+## Operational readiness
+
+## Migration and rollout
+
+## Security, privacy and cost
+
+## Open questions
+`;
+const DEMO_REVIEW = `The problem is real and the reader will feel it. What is missing is its size: numbers a reviewer can check.
+
+<note type="english" severity="low" quote="p99 latency rise from 200 ms" fix="p99 latency rises from 200 ms" rule="subject-verb agreement">A singular subject takes a singular verb: latency rises.</note>
+
+<note type="fact" severity="high" quote="too many requests from a few clients">How many clients, and what share of the traffic? One number from the last spike settles it.</note>
+
+<note type="missing" severity="medium" quote="Three incidents in the last quarter">Link the incident reports and give the dates. A reviewer will open them.</note>
+
+<note type="question" severity="medium">Why not just scale the API for the two peak days? Answer it here, before the reader asks.</note>
+
+<check section="Context and problem" item="clear problem" status="pass">Stated in the first sentence.</check>
+<check section="Context and problem" item="who is affected" status="partial">Everyone, but not how many clients or orders.</check>
+<check section="Context and problem" item="evidence with numbers" status="fail">Latency numbers only, and no source.</check>
+<check section="Context and problem" item="why now" status="partial">Month end is implied, not stated.</check>
+
+Next: add the client count and their share of traffic from the last spike.`;
+const DEMO_REVIEW2 = `Clear and concrete. Two things a reviewer will stop on.
+
+<note type="english" severity="low" quote="The limiter sit in the API gateway" fix="The limiter sits in the API gateway" rule="subject-verb agreement">A singular subject takes a singular verb: the limiter sits.</note>
+
+<note type="fact" severity="high" quote="the limiter fails open">Failing open under Redis latency is the month-end case. What detects it, and who gets paged?</note>
+
+<check section="Proposed design" item="end-to-end flow" status="pass">Client to gateway to Redis to API.</check>
+<check section="Proposed design" item="interfaces" status="pass">429 with Retry-After.</check>
+<check section="Proposed design" item="data model" status="partial">Token bucket named, keys and TTLs not.</check>
+<check section="Proposed design" item="scale and limits" status="fail">No numbers for Redis load at peak.</check>
+
+Next: say what happens when Redis is slow, with a number.`;
+const DEMO_PANEL = `Panel verdict first: the ask is clear and the design is sound; the evidence is thin and the failure path is the month-end path.
+
+<note type="question" severity="high" persona="Skeptical VP">What do I lose if I say no for a quarter? The document never says. Put the cost of waiting in the first paragraph.</note>
+
+<note type="question" severity="high" persona="On-call SRE">It is 02:00 on the 31st and Redis p99 is 40 ms. What happens, and how do I know? Put the answer in Failure modes.</note>
+
+<note type="missing" severity="medium" persona="Staff peer" quote="it cannot see the client id">Say what it would take to pass the client id through. If it is one header, this cheaper option may win.</note>
+
+<note type="structure" severity="low" persona="Staff peer">Failure modes, rollout and cost are empty. Reviewers read those before they read the design.</note>
+
+<score dimension="bottom line" value="4">The ask is in the first lines.</score>
+<score dimension="evidence" value="2">"a few clients" where a number should be.</score>
+<score dimension="options" value="3">Three options, no shared criteria.</score>
+<score dimension="risk honesty" value="2">Failure modes is empty.</score>
+<score dimension="audience fit" value="4">Right vocabulary for the platform lead.</score>
+<score dimension="structure" value="4">Headings tell the story.</score>
+<score dimension="economy" value="4">No restatement.</score>
+<score dimension="actionability" value="3">Friday is named; no owner for the Redis cluster.</score>
+<verdict>REVISE</verdict>
+
+Next: fill Failure modes, starting with Redis slow at month end.`;
+const DEMO_THESIS = `**Bottom line:** A per-client token bucket in Redis stops a few clients from slowing every client at month end, for less than scaling the API.
+
+**The ask:** approval for the Redis cluster from the platform team lead, by Friday.
+
+**Three claims:** (1) p99 rises from 200 ms to 2.1 s at month end (document). (2) Three incidents last quarter came from this (document; link them). (3) Scaling the API costs about $18k a month for a two-day peak (document).
+
+**Strongest counterargument:** quotas at the load balancer are cheaper. Answer: they cannot see the client id behind the shared gateway key; if that changes, revisit.
+
+**What would change my mind:** Redis p99 above 5 ms under load; then limits move in-process.
+
+<draft section="Context and problem">A few clients send most of the Payments API traffic at month end, and everyone pays for it: p99 latency rises from 200 ms to 2.1 s, and the on-call engineer throttles clients by hand. Three incidents last quarter came from this. We propose a per-client token bucket in Redis and need approval for the Redis cluster by Friday.</draft>
+
+Shall I interview you for the Failure modes section next?`;
+async function demo(scene) {
+  document.documentElement.dataset.demo = scene;
+  store.agents = async () => [{ id: 'claude', name: 'Claude Code (bundled)', path: 'bundled with Margin; uses your Claude login', found: true }, { id: 'devin', name: 'Devin', path: '/Users/you/.local/bin/devin acp', found: true }, { id: 'claude-code-acp', name: 'Claude Code (your own install)', path: '`claude-code-acp` is not on your PATH', found: false }, { id: 'codex', name: 'Codex', path: '/opt/homebrew/bin/codex-acp', found: true }, { id: 'gemini', name: 'Gemini CLI', path: '`gemini` is not on your PATH', found: false }, { id: 'goose', name: 'Goose', path: '`goose` is not on your PATH', found: false }, { id: 'custom', name: 'Custom ACP agent command', path: '', found: true }];
+  localStorage.setItem('docu-coach-ws-name', 'Platform workspace');
+  for (const [t, tpl] of [['Postmortem: month-end outage', 'incident'], ['ADR: Postgres over DynamoDB for the ledger', 'adr']]) { const id = await store.create(t); await store.save(id, { ...blank(), id, title: t, templateId: tpl, meta: { words: 340, sections: 4, ready: 2, open: 1, updated: Date.now() - 36e5 * (tpl === 'adr' ? 30 : 6) } }, `# ${t}\n`); }
+  await createDoc('Rate limiter for the Payments API', 'design');
+  $('#title').blur();
+  doc.setMarkdown(DEMO_MD);
+  Object.assign(state, { audience: 'the platform team lead', purpose: 'approve the Redis cluster by Friday', brief: { ask: 'Approve a 3-node Redis cluster for per-client rate limits', objection: 'Why not just scale the API?', deadline: 'Friday, before the month-end freeze', numbers: 'p99 200 ms → 2.1 s at month end; 3 incidents last quarter', nongoals: 'Billing, quota sales' } });
+  $('#aud-audience').value = state.audience; $('#aud-purpose').value = state.purpose;
+  const say = (label, content, section) => { state.chat.push({ role: 'user', content: label, label }); const m = { role: 'assistant', content, done: true }; m.added = ingest(content, section); state.chat.push(m); return m; };
+  setCurrent('Context and problem');
+  say('Review this section · Context and problem', DEMO_REVIEW, 'Context and problem');
+  setCurrent('Proposed design'); say('Review this section · Proposed design', DEMO_REVIEW2, 'Proposed design'); setCurrent('Context and problem');
+  state.lastReview = Date.now() - 4 * 60000;
+  if (scene === 'panel' || scene === 'rehearse') { setCurrent('Proposed design'); say('Panel review: Staff peer, On-call SRE, Implementing engineer', DEMO_PANEL, 'Proposed design'); state.reviewStats.push({ at: Date.now() - 86400e3, english: 5, notes: 7, avg: 2.6 }, { at: Date.now(), english: 1, notes: 4, avg: 3.3 }); }
+  if (scene === 'rehearse') {
+    state.mode = 'rehearse';
+    say('Start the meeting', '**Skeptical VP:** What do I lose if I say no for a quarter? Give me a number, not an adjective.');
+    say('We lose about 6% of month-end orders, roughly $40k a month, from clients hitting timeouts.', '<grade value="4">A number with a unit. A reviewer will ask where it comes from; name the dashboard.</grade>\n\n**Staff peer:** Why not per-client quotas at the load balancer, which already exists and costs nothing?');
+    say('The load balancer only sees the shared gateway key, not the client id. Passing the id through means a header change in 40 client integrations.', '<grade value="5">Specific, and it names the cost of the alternative. Put this sentence in Alternatives considered.</grade>\n\n<draft section="Alternatives considered">Quotas at the load balancer: cheaper, but the balancer only sees the shared gateway key. Passing the client id through means a header change in 40 client integrations, so it is not cheaper in practice.</draft>\n\n**On-call SRE:** It is 02:00 on the 31st and Redis p99 is 40 ms. What happens, and how do I know?');
+  }
+  if (scene === 'thesis') { state.mode = 'interview'; say('Thesis', DEMO_THESIS, 'Context and problem'); }
+  renderComments(); renderMeta(); renderCoachBar(); renderLog(); save();
+  $('#ws-crumb').textContent = 'Platform workspace';
+  const settle = () => new Promise(r => setTimeout(r, 600));
+  if (scene === 'review') { setThread(false); await settle(); const c = state.comments.find(x => x.kind === 'english' && x.section === 'Proposed design' && !x.resolved); if (c) { activate(c.id, true); await settle(); hidePop = () => {}; showPop(c.id); clearTimeout(popTimer); } }
+  if (scene === 'panel') { setThread(true); await settle(); showRubricPop($('#rubric-btn')); }
+  if (scene === 'rehearse' || scene === 'thesis') { setThread(true); await settle(); $('#log').scrollTop = 1e9; }
+  if (scene === 'diagram') { setThread(false); setCurrent('Proposed design'); await placeDiagram({ spec: { nodes: [{ id: 'c', label: 'Clients' }, { id: 'g', label: 'API gateway + limiter' }, { id: 'r', label: 'Redis (token buckets)' }, { id: 'p', label: 'Payments API' }], edges: [{ from: 'c', to: 'g', label: 'requests' }, { from: 'g', to: 'r', label: 'take token' }, { from: 'g', to: 'p', label: 'allowed' }] } }, doc.sections().find(s => s.title === 'Proposed design').to); await settle(); const img = [...document.querySelectorAll('.ProseMirror img[data-scene]')].pop(); if (img) img.scrollIntoView({ block: 'center' }); }
+  if (scene === 'brief') { setThread(false); document.querySelector('.brief-toggle').click(); for (const k of ['ask', 'objection', 'deadline', 'numbers', 'nongoals']) $('#brief-' + k).value = state.brief[k]; }
+  if (scene === 'export') { setThread(false); $('#export').open = true; }
+  if (scene === 'library') { await flush(); showView('library'); }
+  if (scene === 'settings') { showView('settings'); }
+  document.documentElement.dataset.demo = scene;
+}
+
 (async () => {
+  const scene = !inApp && new URLSearchParams(location.search).get('demo');
+  if (scene) { try { await demo(scene); } catch (e) { console.error('demo', e); } return; }
   const last = localStorage.getItem(LAST);
   if (last) { try { await openDoc(last); return; } catch {} }
   const docs = await store.list().catch(() => []);

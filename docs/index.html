@@ -7,6 +7,7 @@
 <meta name="description" content="Margin is a macOS app where a tough, kind reviewer reads your design doc, RFC, ADR or postmortem before the real reviewers do. Notes land on your text; a reviewer panel scores it; you rehearse the meeting in private.">
 <meta property="og:title" content="Margin">
 <meta property="og:description" content="Your toughest reviewer, before your real ones. A private writing coach for technical documents.">
+<meta property="og:image" content="https://heapworks-in.github.io/margin/shots/review.png">
 <link rel="stylesheet" href="fonts/fonts.css">
 <link rel="stylesheet" href="site.css">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='4' fill='%235B9CFF'/%3E%3C/svg%3E">
@@ -16,7 +17,9 @@
 <div class="top"><div class="wrap">
   <a class="brand" href="#"><i></i>Margin</a>
   <nav>
-    <a href="#how">How to use</a>
+    <a href="#tour">Tour</a>
+    <a href="#try">Try it</a>
+    <a href="#how">Manual</a>
     <a href="https://github.com/heapworks-in/margin">GitHub</a>
     <a class="cta" href="https://github.com/heapworks-in/margin/releases/latest">Download for Mac</a>
   </nav>
@@ -33,28 +36,7 @@
       <small>Apple Silicon, macOS 13+. Or the <a href="https://github.com/heapworks-in/margin/releases/latest">DMG</a>. Uses your Claude Code login, or Devin, Codex, Gemini CLI, Goose if you have them. No API key.</small>
     </div>
   </div>
-
-  <figure class="specimen" aria-label="A section of a design document with the coach's notes on it">
-    <div class="sbar"><i></i><i></i><i></i><span>Platform workspace / Design doc</span><b>Review document</b></div>
-    <div class="page">
-      <div class="spine"><i class="ok"></i><i class="ok"></i><i class="on"></i><i></i><i></i><i></i><i></i></div>
-      <h2>Proposed design <span class="badge">3 notes</span></h2>
-      <p class="aud">For <u>the platform team lead</u> so that they <u>approve the Redis cluster by Friday</u></p>
-      <p>We propose a per-client token bucket in Redis. <mark class="fact">A few clients send most of the traffic</mark> at month end, and p99 latency <mark class="english">rise</mark> from 200 ms to 2.1 s for everyone. <mark class="missing">If Redis is slow, the limiter fails open</mark> so no request is dropped.</p>
-      <p>Each client gets 500 requests per second, refilled continuously. Limits live in a config map and change without a deploy.</p>
-      <div class="note">
-        <div class="k"><b>Fact</b> · Skeptical VP <span>high</span></div>
-        <div class="q">“A few clients send most of the traffic”</div>
-        How many, and what share? A reviewer will not fund a cluster on “a few”. The dashboard from the last spike settles it: <code>3 of 240 clients, 70%</code>.
-        <div class="acts"><em>Insert the number</em><em>Resolve</em></div>
-      </div>
-    </div>
-    <div class="dock">
-      <div class="chips"><i>Interview</i><i class="on">Review</i><i>Rehearse</i><i>Review this section</i><i>30-second read</i><i>Claims</i><i>Fix English</i><i>Lint</i></div>
-      <div class="ask">Ask the coach in any English…</div>
-    </div>
-    <div class="status"><span>Page <b>2</b></span><span><b>612</b> words</span><span>Sections <b>5/9</b> written, <b>2</b> ready</span><span><b>3</b> open notes</span><span>Rubric <b>3.4</b> · <span class="ship">REVISE</span></span></div>
-  </figure>
+  <div class="shots" aria-roledescription="carousel" aria-label="Screenshots of Margin"></div>
 </section>
 
 <section class="three">
@@ -73,6 +55,48 @@
     <h3>It learns your reviewers, and teaches you</h3>
     <p>Paste the comments you really got and the coach recalibrates. Your repeated English mistakes become short lessons. History shows each document getting better, round by round.</p>
   </article>
+</section>
+
+<section class="sec" id="tour">
+  <header class="sech">
+    <h2>One document, step by step</h2>
+    <p>The real screens, in the order you would use them. Click a step, or use ← and →.</p>
+  </header>
+  <div class="tour"></div>
+</section>
+
+<section class="sec try" id="try">
+  <div class="tryin">
+    <div>
+      <h2>Try it in your browser</h2>
+      <p>The same editor, running here with a scripted coach instead of a real one. Click the underlines, open the rubric, drag blocks, press <code>/</code>. Nothing you type leaves the page. The desktop app adds the real coach, your workspace on disk, and import and publish.</p>
+      <div class="scenes">
+        <a class="btn" href="app/?demo=review">Open the playground</a>
+        <a href="app/?demo=panel">…at the panel review</a>
+        <a href="app/?demo=rehearse">…mid-rehearsal</a>
+        <a href="app/?demo=diagram">…with a drawn diagram</a>
+      </div>
+    </div>
+    <a class="peek" href="app/?demo=review" aria-label="Open the playground"><img src="shots/review.png" alt="" width="1440" height="900" loading="lazy"></a>
+  </div>
+</section>
+
+<section class="sec" id="keys">
+  <header class="sech">
+    <h2>The editor, from the keyboard</h2>
+    <p>It behaves like Notion. Nothing here needs the mouse.</p>
+  </header>
+  <div class="keys">
+    <div><kbd>/</kbd><span>Blocks: section, subheading, lists, to-do, code, quote, table, divider, diagram</span></div>
+    <div><kbd>##</kbd><kbd>-</kbd><kbd>1.</kbd><kbd>[]</kbd><kbd>&gt;</kbd><kbd>```</kbd><span>Markdown shortcuts at the start of a line</span></div>
+    <div><kbd>⌘</kbd><kbd>⇧</kbd><kbd>↑</kbd><kbd>↓</kbd><span>Move the block up or down</span></div>
+    <div><kbd>⌘</kbd><kbd>D</kbd><span>Duplicate the block</span></div>
+    <div><kbd>⌘</kbd><kbd>⇧</kbd><kbd>⌫</kbd><span>Delete the block</span></div>
+    <div><kbd>Esc</kbd><span>Select the whole block</span></div>
+    <div><kbd>⌘</kbd><kbd>⌥</kbd><kbd>0–9</kbd><span>Turn the block into text, section, subheading, to-do, bullets, numbers, code, quote</span></div>
+    <div><kbd>fn</kbd><kbd>fn</kbd><span>Dictate (macOS), then <em>Reshape dictation</em> in the coach</span></div>
+    <div><kbd>Enter</kbd><kbd>⇧</kbd><kbd>Enter</kbd><span>In the coach bar: send; Shift-Enter for a new line</span></div>
+  </div>
 </section>
 
 <section class="manual" id="how">
