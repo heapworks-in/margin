@@ -5,7 +5,7 @@ set -e
 cd "$(dirname "$0")/.."
 CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 PROFILE="${TMPDIR:-/tmp}/margin-shots-profile"
-for scene in review brief panel rehearse thesis diagram export library settings; do
+for scene in review reader brief panel rehearse thesis diagram export library settings; do
   rm -rf "$PROFILE"
   "$CHROME" --headless=new --disable-gpu --hide-scrollbars --no-first-run --user-data-dir="$PROFILE" \
     --force-device-scale-factor=2 --window-size=1440,900 --virtual-time-budget=25000 \

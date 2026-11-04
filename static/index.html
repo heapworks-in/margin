@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Margin</title>
 <link href="vendor/fonts/fonts.css" rel="stylesheet">
-<script src="vendor/editor.js?v=41"></script>
+<script src="vendor/editor.js?v=43"></script>
 <style>
 :root{
   color-scheme:dark;
@@ -15,7 +15,7 @@
   --accent:#5B9CFF; --accent-ink:#8FBCFF; --accent-soft:#16283F;
   --green:#48D597;
   --english:#6AA6FF; --missing:#F2B64B; --fact:#FF7B86; --question:#4ECBA9; --structure:#9AA1AC; --draft:#4C8DFF;
-  --english-bg:#1D2E4A; --missing-bg:#3A2F12; --fact-bg:#3F1F27; --question-bg:#143A33; --structure-bg:#2A2E35;
+  --english-bg:#1D2E4A; --missing-bg:#3A2F12; --fact-bg:#3F1F27; --question-bg:#143A33; --structure-bg:#2A2E35; --reader:#F5B8D0; --reader-bg:#3A2430;
   --ui:"Manrope",system-ui,-apple-system,"Segoe UI",sans-serif;
   --mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,monospace;
 }
@@ -280,7 +280,7 @@ button:disabled{opacity:.45;cursor:default}
 .card-head .resolve:hover{border-color:var(--green);color:var(--green)}
 .card .quote{color:var(--muted);font-size:12px;margin:0 0 6px;padding-left:8px;border-left:2px solid var(--c);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .card .md{color:var(--ink-2);font-size:13px}
-.card.english{--c:var(--english)}.card.missing{--c:var(--missing)}.card.fact{--c:var(--fact)}.card.question{--c:var(--question)}.card.structure{--c:var(--structure)}.card.draft{--c:var(--draft)}
+.card.english{--c:var(--english)}.card.missing{--c:var(--missing)}.card.fact{--c:var(--fact)}.card.question{--c:var(--question)}.card.structure{--c:var(--structure)}.card.draft{--c:var(--draft)}.card.reader{--c:var(--reader)}
 .card.draft{background:var(--accent-soft)}
 .card .draft-text{font-size:13px;line-height:1.5;color:var(--ink);white-space:pre-wrap;margin:0 0 8px}
 .card .row{display:flex;gap:6px}
@@ -341,6 +341,7 @@ mark.c-mark[data-kind="english"]{background:none;border-bottom:0;text-decoration
 mark.c-mark[data-kind="missing"]{background:var(--missing-bg);border-color:var(--missing)}
 mark.c-mark[data-kind="fact"]{background:var(--fact-bg);border-color:var(--fact)}
 mark.c-mark[data-kind="question"]{background:var(--question-bg);border-color:var(--question)}
+mark.c-mark[data-kind="reader"]{background:var(--reader-bg);border-color:var(--reader);border-bottom-style:dotted}
 mark.c-mark.active{box-shadow:0 0 0 2px var(--accent-soft);filter:saturate(1.4)}
 .hljs-keyword,.hljs-built_in,.hljs-selector-tag{color:#C586C0}
 .hljs-string,.hljs-regexp,.hljs-addition{color:#CE9178}
@@ -751,7 +752,7 @@ const store = inApp ? {
   confluence: async () => { throw new Error('Confluence import works in the app.'); },
 };
 
-const blank = () => ({ id: null, title: '', templateId: 'design', notes: '', docJson: null, current: null, mode: 'review', chat: [], comments: [], checks: {}, audience: '', purpose: '', brief: { ask: '', objection: '', deadline: '', numbers: '', nongoals: '' }, rubric: null, claims: [], grades: [], reviewStats: [], publish: null, attachments: [], focus: false, threadOpen: false });
+const blank = () => ({ id: null, title: '', templateId: 'design', notes: '', docJson: null, current: null, mode: 'review', chat: [], comments: [], checks: {}, audience: '', purpose: '', brief: { ask: '', objection: '', deadline: '', numbers: '', nongoals: '' }, rubric: null, reader: null, claims: [], grades: [], reviewStats: [], publish: null, attachments: [], focus: false, threadOpen: false });
 let styleRules = '', feedbackText = '';
 let savedTimer, saveTimer, saving = false, dirty = false;
 function meta() {
@@ -873,6 +874,7 @@ function renderMeta() {
     `<span>Sections <b>${have}/${expected}</b> written, <b class="${all.length && ready === all.length ? 'ok' : ''}">${ready}</b> ready</span>` +
     `<span class="${open ? 'warn' : ''}"><b>${open}</b> open ${open === 1 ? 'note' : 'notes'}</span>` +
     (state.rubric ? `<span><button type="button" id="rubric-btn">Rubric <b>${rubricAvg().toFixed(1)}</b> · <span class="verdict ${state.rubric.verdict === 'SHIP' ? 'ship' : 'revise'}">${esc(state.rubric.verdict || 'REVISE')}</span></button></span>` : '') +
+    (state.reader ? `<span><button type="button" id="reader-btn" title="${esc(state.reader.why)}">Reader <b class="verdict ${state.reader.decision === 'yes' ? 'ship' : state.reader.decision === 'no' ? 'revise' : ''}">${{ yes: 'says yes', ask: 'would ask', no: 'says no' }[state.reader.decision]}</b></button></span>` : '') +
     (state.claims.length ? `<span><button type="button" id="claims-btn">Claims <b>${state.claims.length}</b>${state.claims.filter(c => /^unsupported/i.test(c.source)).length ? ` · <span class="verdict revise">${state.claims.filter(c => /^unsupported/i.test(c.source)).length} unsupported</span>` : ''}</button></span>` : '') +
     (state.grades.length ? `<span>Rehearsal <b>${(state.grades.reduce((a, g) => a + g.value, 0) / state.grades.length).toFixed(1)}</b>/5</span>` : '') +
     (state.reviewStats.length ? `<span><button type="button" id="history-btn">History <b>${state.reviewStats.length}</b></button></span>` : '') +
@@ -880,6 +882,7 @@ function renderMeta() {
   $('#lessons-btn').onclick = e => showLessonsPop(e.currentTarget);
   const rb = $('#rubric-btn'); if (rb) rb.onclick = e => showRubricPop(e.currentTarget);
   const cb = $('#claims-btn'); if (cb) cb.onclick = e => showClaimsPop(e.currentTarget);
+  const rdb = $('#reader-btn'); if (rdb) rdb.onclick = e => { const pop = $('#pop'); clearTimeout(popTimer); popId = 'reader'; pop.className = 'pop rubric'; pop.replaceChildren(); const head = el('div', { className: 'card-head' }); head.append(el('b', { textContent: 'Your reader, after one read' })); pop.append(head, el('p', { style: 'margin:6px 0 0;font-size:13px;line-height:1.5;color:var(--ink-2)', textContent: state.reader.why }), el('p', { className: 'note', style: 'margin:8px 0 0;font-size:12px;color:var(--faint)', textContent: `Read ${ago(state.reader.at)}. Reader notes in the text show where it was decided.` })); placePop(pop, e.currentTarget); };
   const hb = $('#history-btn'); if (hb) hb.onclick = e => showHistoryPop(e.currentTarget);
   const cur = state.current, sec = all.find(x => x.title === cur), st = sec ? sectionStatus(cur, sec.words) : (cur === NOTES ? null : 'empty');
   const failing = cur && state.checks[cur] ? Object.values(state.checks[cur]).filter(v => v.status !== 'pass').length : 0;
@@ -997,6 +1000,7 @@ const ACTIONS = {
   review: [
     ['Review this section', s => `Review the "${s}" section.`],
     ['30-second read', () => 'Do the 30-second read of this document: title, first paragraph and headings only. What do you believe it asks for, and does that match the brief?'],
+    ['Read as my reader', () => 'Read this document as my reader: the reader in the brief, with their job, their time and their objection. Tell me what happens in their head, where it happens, and what they decide.'],
     ['Claims', s => `List the claims in the "${s}" section with their sources.`],
     ['Fix English', s => `Only fix the English in the "${s}" section. Keep my meaning and my facts.`],
     ['Lint', () => 'Lint the whole document against the style rules.'],
@@ -1028,8 +1032,8 @@ function setFocus(on) {
 
 /* ---------- coach replies -> thread + comments ---------- */
 const TAG = /<(note|draft)\b([^>]*)>([\s\S]*?)<\/\1>/g;
-const KIND_LABEL = { english: 'English', missing: 'Missing', fact: 'Check this fact', question: 'A reviewer will ask', structure: 'Structure', draft: 'Draft' };
-const KIND_SHORT = { english: 'English', missing: 'Missing', fact: 'Fact', question: 'Question', structure: 'Structure', draft: 'Draft' };
+const KIND_LABEL = { english: 'English', missing: 'Missing', fact: 'Check this fact', question: 'A reviewer will ask', structure: 'Structure', draft: 'Draft', reader: 'Your reader thinks' };
+const KIND_SHORT = { english: 'English', missing: 'Missing', fact: 'Fact', question: 'Question', structure: 'Structure', draft: 'Draft', reader: 'Reader' };
 const STATUS_ORDER = { needs: 0, drafted: 1, empty: 2, ready: 3 };
 const plural = (n, k) => n === 1 || ['english', 'missing', 'structure'].includes(k) ? KIND_SHORT[k] : KIND_SHORT[k] + 's';
 const attrs = s => Object.fromEntries([...s.matchAll(/(\w+)="([^"]*)"/g)].map(m => [m[1], m[2].replace(/&quot;/g, '"')]));
@@ -1050,7 +1054,7 @@ function md(t) {
 }
 const kindOf = a => KIND_LABEL[a.type] && a.type !== 'draft' ? a.type : 'structure';
 // Text the thread shows: the reply minus its tags (they become comments).
-const prose = text => text.replace(TAG, '').replace(/<(check|score|claim|diagram)\b[^>]*>[\s\S]*?<\/\1>/g, '').replace(/<grade\b[^>]*value="(\d)"[^>]*>([\s\S]*?)<\/grade>/g, (m, v, why) => `**Answer graded ${v}/5.** ${why.trim()}`).replace(/<verdict>[\s\S]*?<\/verdict>/g, '').replace(/<(note|draft|check|score|verdict|claim|grade|diagram)\b[\s\S]*$/, '').replace(/\n{3,}/g, '\n\n').trim();
+const prose = text => text.replace(TAG, '').replace(/<(check|score|claim|diagram)\b[^>]*>[\s\S]*?<\/\1>/g, '').replace(/<reader\b[^>]*decision="(\w+)"[^>]*>([\s\S]*?)<\/reader>/g, (m, d, why) => `**Your reader ${{ yes: 'says yes', ask: 'would ask first', no: 'says no' }[d.toLowerCase()] || 'decides'}.** ${why.trim()}`).replace(/<grade\b[^>]*value="(\d)"[^>]*>([\s\S]*?)<\/grade>/g, (m, v, why) => `**Answer graded ${v}/5.** ${why.trim()}`).replace(/<verdict>[\s\S]*?<\/verdict>/g, '').replace(/<(note|draft|check|score|verdict|claim|grade|diagram)\b[\s\S]*$/, '').replace(/\n{3,}/g, '\n\n').trim();
 function typing(label) {
   return el('div', { className: 'pending', innerHTML: `<span class="typing"><i></i><i></i><i></i></span>${esc(label)}` });
 }
@@ -1082,6 +1086,7 @@ function ingest(reply, section) {
   const scores = {};
   for (const m of reply.matchAll(SCORE)) { const a = attrs(m[1]), dim = (a.dimension || '').trim().toLowerCase(), v = Number(a.value); if (RUBRIC.includes(dim) && v >= 1 && v <= 5) scores[dim] = { value: v, note: m[2].trim() }; }
   const verdict = (reply.match(/<verdict>\s*(SHIP|REVISE)\s*<\/verdict>/i) || [])[1];
+  const rd = reply.match(/<reader\b([^>]*)>([\s\S]*?)<\/reader>/); if (rd) { const d = (attrs(rd[1]).decision || '').toLowerCase(); if (['yes', 'ask', 'no'].includes(d)) state.reader = { decision: d, why: rd[2].trim(), at: Date.now() }; }
   if (Object.keys(scores).length) state.rubric = { scores, verdict: (verdict || '').toUpperCase(), at: Date.now() };
   for (const m of reply.matchAll(CHECK)) {
     const a = attrs(m[1]), sec = findSection(a.section), item = (a.item || '').trim().toLowerCase();
@@ -1322,7 +1327,7 @@ document.addEventListener('mouseover', e => {
   clearTimeout(popTimer); popTimer = setTimeout(hidePop, 300);
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') hidePop(); });
-document.addEventListener('mousedown', e => { if (!e.target.closest('#pop') && !e.target.closest('.hbadge') && !e.target.closest('mark[data-comment]') && !e.target.closest('#lessons-btn') && !e.target.closest('#rubric-btn') && !e.target.closest('#claims-btn') && !e.target.closest('#history-btn')) hidePop(); });
+document.addEventListener('mousedown', e => { if (!e.target.closest('#pop') && !e.target.closest('.hbadge') && !e.target.closest('mark[data-comment]') && !e.target.closest('#lessons-btn') && !e.target.closest('#rubric-btn') && !e.target.closest('#claims-btn') && !e.target.closest('#history-btn') && !e.target.closest('#reader-btn')) hidePop(); });
 $('#scroll').addEventListener('scroll', hidePop, { passive: true });
 function toggleResolved(c) {
   c.resolved = !c.resolved;
@@ -1426,6 +1431,8 @@ async function mockCoach(text, emit) {
         ? `**Skeptical VP:** What do I lose if I say no for a quarter? Give me a number.`
       : /^Next question\.$/.test(text) || /quarter/.test(text)
         ? `<grade value="3">You named the cost but not its size.</grade>\n\n**Staff peer:** Why not per-client quotas at the load balancer, which already exists?`
+      : /as my reader/.test(text)
+        ? `I am the platform team lead. I have ten minutes before the next meeting.\n\n<note type="reader" severity="low" quote="${q1}">Good, I know this problem. I keep reading.</note>\n\n<note type="reader" severity="high" quote="${q2}">Here I stop. How many clients? If it is three, I want their names before I fund a cluster.</note>\n\n<reader decision="ask">I would ask for the client count and the month-end numbers before saying yes; with those, I approve.</reader>`
       : /30-second read/.test(text)
         ? `From the title, first paragraph and headings alone, this document asks for approval to build a rate limiter, from the platform team lead. The brief asks for the same, so a skimming reader gets it right. One gap: the cost is not visible in the first screen.`
       : /as a panel/.test(text)
@@ -2047,6 +2054,19 @@ const DEMO_REVIEW2 = `Clear and concrete. Two things a reviewer will stop on.
 <check section="Proposed design" item="scale and limits" status="fail">No numbers for Redis load at peak.</check>
 
 Next: say what happens when Redis is slow, with a number.`;
+const DEMO_READER = `I am the platform team lead. I have ten minutes before the next meeting.
+
+<note type="reader" severity="low" quote="p99 latency rise from 200 ms to 2.1 s for everyone">A real number, and it hits everyone. I keep reading.</note>
+
+<note type="reader" severity="medium" quote="Three incidents in the last quarter">This hurts and it repeats. But I am at the end of the first paragraph and I still do not know what you want from me.</note>
+
+<note type="reader" severity="high" quote="We propose a per-client token bucket in Redis">Which Redis? An existing one, or the cluster I am being asked to fund? I cannot approve infrastructure that is not described.</note>
+
+<note type="reader" severity="medium" quote="the limiter fails open">So at month end, when Redis is slow, the limiter switches off and we are back to 2.1 s? I look for Failure modes. It is empty.</note>
+
+<note type="reader" severity="high" quote="about $18k a month more, for a peak that lasts two days">My question, answered last and only half: $18k compared to what? And if the peak is two days, why not scale for two days? That is what I will ask in the meeting.</note>
+
+<reader decision="ask">I agree the problem is real, but I will not approve yet. I need the cluster's size and cost next to the $18k, and one line on why we cannot scale only for the peak.</reader>`;
 const DEMO_PANEL = `Panel verdict first: the ask is clear and the design is sound; the evidence is thin and the failure path is the month-end path.
 
 <note type="question" severity="high" persona="Skeptical VP">What do I lose if I say no for a quarter? The document never says. Put the cost of waiting in the first paragraph.</note>
@@ -2103,6 +2123,7 @@ async function demo(scene) {
     say('We lose about 6% of month-end orders, roughly $40k a month, from clients hitting timeouts.', '<grade value="4">A number with a unit. A reviewer will ask where it comes from; name the dashboard.</grade>\n\n**Staff peer:** Why not per-client quotas at the load balancer, which already exists and costs nothing?');
     say('The load balancer only sees the shared gateway key, not the client id. Passing the id through means a header change in 40 client integrations.', '<grade value="5">Specific, and it names the cost of the alternative. Put this sentence in Alternatives considered.</grade>\n\n<draft section="Alternatives considered">Quotas at the load balancer: cheaper, but the balancer only sees the shared gateway key. Passing the client id through means a header change in 40 client integrations, so it is not cheaper in practice.</draft>\n\n**On-call SRE:** It is 02:00 on the 31st and Redis p99 is 40 ms. What happens, and how do I know?');
   }
+  if (scene === 'reader') { say('Read as my reader', DEMO_READER, 'Context and problem'); }
   if (scene === 'thesis') { state.mode = 'interview'; say('Thesis', DEMO_THESIS, 'Context and problem'); }
   renderComments(); renderMeta(); renderCoachBar(); renderLog(); save();
   $('#ws-crumb').textContent = 'Platform workspace';
@@ -2111,6 +2132,7 @@ async function demo(scene) {
   if (scene === 'panel') { setThread(true); await settle(); showRubricPop($('#rubric-btn')); }
   if (scene === 'rehearse' || scene === 'thesis') { setThread(true); await settle(); $('#log').scrollTop = 1e9; }
   if (scene === 'diagram') { setThread(false); setCurrent('Proposed design'); await placeDiagram({ spec: { nodes: [{ id: 'c', label: 'Clients' }, { id: 'g', label: 'API gateway + limiter' }, { id: 'r', label: 'Redis (token buckets)' }, { id: 'p', label: 'Payments API' }], edges: [{ from: 'c', to: 'g', label: 'requests' }, { from: 'g', to: 'r', label: 'take token' }, { from: 'g', to: 'p', label: 'allowed' }] } }, doc.sections().find(s => s.title === 'Proposed design').to); await settle(); const img = [...document.querySelectorAll('.ProseMirror img[data-scene]')].pop(); if (img) img.scrollIntoView({ block: 'center' }); }
+  if (scene === 'reader') { setThread(false); setCurrent('Proposed design'); await settle(); const c = state.comments.find(x => x.kind === 'reader' && x.severity === 'high' && /18k/.test(x.quote)); if (c) { activate(c.id, true); hidePop = () => {}; showPop(c.id); clearTimeout(popTimer); } }
   if (scene === 'brief') { setThread(false); document.querySelector('.brief-toggle').click(); for (const k of ['ask', 'objection', 'deadline', 'numbers', 'nongoals']) $('#brief-' + k).value = state.brief[k]; }
   if (scene === 'export') { setThread(false); $('#export').open = true; }
   if (scene === 'library') { await flush(); showView('library'); }

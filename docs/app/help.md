@@ -56,6 +56,7 @@ Put the cursor in a section and press **Review this section**. Notes appear as u
 - **Lint** checks the document against your style rules (Settings → Style rules; a sensible default is built in).
 - **Check facts** lists every claim a reviewer might doubt. **Claims** goes further: a ledger of every claim with its source (brief, attachment, the document, or unsupported). Unsupported claims are underlined; the status bar shows the count.
 - **30-second read**: the coach reads only the title, first paragraph and headings and says what it thinks you are asking for. If that is not your ask, the structure is wrong, and you learn it in seconds.
+- **Read as my reader**: the coach becomes the reader from the Brief and reads once, top to bottom, the way they would. Reader notes land on the text in the first person: where they stop trusting a number, where they skip, where the deciding question comes up. The status bar shows what they walk away with: says yes, would ask, says no. This is the question no review note answers: will it land?
 - When a section passes all its checks, the coach says so in the chat and offers the weakest remaining section with one button. Follow it until the spine is green.
 
 Every quote the coach makes is checked against your text. A note that quotes words not in the document is sent back once for correction and dropped if it still does not match. You see "Checked quotes against the text" under each review.

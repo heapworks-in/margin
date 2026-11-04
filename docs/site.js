@@ -10,6 +10,7 @@ const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
 /* ---------- hero: real screenshots, rotating ---------- */
 const SHOTS = [
   ['review', 'Notes land on your text. Click an underline; the fix is one click away.'],
+  ['reader', 'Read as my reader: what your actual reader thinks, line by line, and what they decide.'],
   ['panel', 'Review document: three reviewers, eight scores, SHIP or REVISE.'],
   ['rehearse', 'Rehearse: the panel asks, you answer, every answer is graded.'],
   ['thesis', 'Thesis: the bottom line in 25 words, before you write anything long.'],
