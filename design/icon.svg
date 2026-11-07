@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- The brand mark from the top bar, scaled: a blue tile with its soft ring, on the app's graphite. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#171C26"/>
+      <stop offset="1" stop-color="#0E1117"/>
+    </linearGradient>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7DB3FF"/>
+      <stop offset="1" stop-color="#4A8DF5"/>
+    </linearGradient>
+  </defs>
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="url(#bg)"/>
+  <rect x="64.5" y="64.5" width="895" height="895" rx="200" fill="none" stroke="#2A3240" stroke-width="1"/>
+  <rect x="236" y="236" width="552" height="552" rx="168" fill="#16283F"/>
+  <rect x="328" y="328" width="368" height="368" rx="110" fill="url(#tile)"/>
+  <rect x="328" y="328" width="368" height="184" rx="110" fill="#ffffff" opacity="0.08"/>
+</svg>
