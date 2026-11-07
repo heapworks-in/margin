@@ -484,6 +484,20 @@ fn history_read(app: AppHandle, id: String, name: String) -> Result<String, Stri
     std::fs::read_to_string(doc_dir(&app, &id)?.join("history").join(safe_name(&name)?)).map_err(|e| e.to_string())
 }
 
+/// Files picked with the native dialog, read for the page (name, size, base64). 25 MB cap per file.
+#[tauri::command]
+fn read_files(paths: Vec<String>) -> Vec<serde_json::Value> {
+    use base64::Engine;
+    paths.iter().map(|p| {
+        let path = PathBuf::from(p);
+        let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        match std::fs::metadata(&path).and_then(|m| if m.len() > 25 * 1024 * 1024 { Err(std::io::Error::other("over 25 MB")) } else { std::fs::read(&path) }) {
+            Ok(bytes) => serde_json::json!({ "name": name, "size": bytes.len(), "data": base64::engine::general_purpose::STANDARD.encode(bytes) }),
+            Err(e) => serde_json::json!({ "name": name, "error": e.to_string() }),
+        }
+    }).collect()
+}
+
 /// Shared files: context any document can attach.
 #[tauri::command]
 fn files_list(app: AppHandle) -> Result<Vec<serde_json::Value>, String> { Ok(list_dir(&workspace(&app)?.join("files"))) }
@@ -597,8 +611,9 @@ fn save_markdown(app: AppHandle, name: String, text: String) -> Result<String, S
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(Coach::default())
-        .invoke_handler(tauri::generate_handler![ask, save_markdown, extract_pdf, ws_info, ws_use, ws_forget, reveal, docs_list, doc_create, doc_load, doc_save, doc_delete, asset_save, diagrams_list, diagram_save, diagram_load, diagram_delete, files_list, file_add, file_read, file_delete, library_load, library_save, confluence_fetch, settings_get, settings_set, agents_discover, agent_models, style_get, style_set, feedback_get, feedback_set, doc_snapshot, history_list, history_read, confluence_publish])
+        .invoke_handler(tauri::generate_handler![ask, save_markdown, extract_pdf, ws_info, ws_use, ws_forget, reveal, docs_list, doc_create, doc_load, doc_save, doc_delete, asset_save, diagrams_list, diagram_save, diagram_load, diagram_delete, files_list, file_add, file_read, file_delete, library_load, library_save, confluence_fetch, settings_get, settings_set, agents_discover, agent_models, read_files, style_get, style_set, feedback_get, feedback_set, doc_snapshot, history_list, history_read, confluence_publish])
         .run(tauri::generate_context!())
         .expect("error while running Margin");
 }

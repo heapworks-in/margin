@@ -64,7 +64,7 @@ Every quote the coach makes is checked against your text. A note that quotes wor
 
 ## 7. Add context
 
-**+ Context** (top bar) attaches files the coach should know: specs, tickets, dashboards exported as CSV, PDFs, screenshots. Files in the workspace's `files/` folder can be attached to any document. Attachments go to the coach with every message; they are never shown to anyone else.
+**+ Context** (top bar) opens a file dialog (or drop files onto the document) to attach what the coach should know: specs, tickets, dashboards exported as CSV, PDFs, screenshots. Files in the workspace's `files/` folder can be attached to any document. Attachments go to the coach with every message; they are never shown to anyone else.
 
 ## 8. Diagrams and images
 

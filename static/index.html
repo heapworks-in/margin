@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Margin</title>
 <link href="vendor/fonts/fonts.css" rel="stylesheet">
-<script src="vendor/editor.js?v=45"></script>
+<script src="vendor/editor.js?v=46"></script>
 <style>
 :root{
   color-scheme:dark;
@@ -1571,7 +1571,9 @@ async function renderLibrary() {
   const fh = el('div', { className: 'lib-sec-head' }); fh.append(el('h2', { textContent: 'Files' }), el('span', { className: 'n', textContent: 'Context any document can attach: specs, tickets, data, screenshots, PDFs' }));
   const fright = el('div', { className: 'right' });
   const addLabel = el('label', { className: 'btn primary', textContent: 'Add files' }); const fin = el('input', { type: 'file', multiple: true, hidden: true }); addLabel.append(fin);
-  fin.onchange = async e => { for (const f of e.target.files) { if (f.size > 20 * 1048576) { alert(f.name + ' is over 20 MB.'); continue; } await store.files.add(f.name, await readAs(f, 'base64')); } fin.value = ''; renderLibrary(); };
+  const addShared = async files => { for (const f of files) { if (f.size > 20 * 1048576) { console.warn(f.name + ' is over 20 MB.'); continue; } await store.files.add(f.name, await readAs(f, 'base64')); } renderLibrary(); };
+  fin.onchange = async e => { await addShared([...e.target.files]); fin.value = ''; };
+  if (inApp) addLabel.onclick = e => { e.preventDefault(); pickFiles().then(fs => fs.length && addShared(fs)); };
   fright.append(addLabel); fh.append(fright); fSec.append(fh);
   const flist = el('div', { className: 'flist' });
   let files = []; try { files = await store.files.list(); } catch {}
@@ -1790,6 +1792,7 @@ function openImport() {
   const drop = el('label', { className: 'drop', textContent: 'Drop a .md, .txt, .html or .docx file here, or click to choose' });
   const fin = el('input', { type: 'file', accept: '.md,.markdown,.txt,.html,.htm,.docx' }); drop.append(fin);
   fin.onchange = () => { file = fin.files[0]; drop.firstChild.textContent = file ? file.name : 'Drop a file here, or click to choose'; };
+  if (inApp) drop.onclick = e => { e.preventDefault(); pickFiles({ multiple: false, extensions: ['md', 'markdown', 'txt', 'html', 'htm', 'docx'] }).then(fs => { if (fs[0]) { file = fs[0]; drop.firstChild.textContent = file.name; } }); };
   drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); }; drop.ondragleave = () => drop.classList.remove('over');
   drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); file = e.dataTransfer.files[0]; if (file) drop.firstChild.textContent = file.name; };
   const url = el('input', { type: 'text', placeholder: 'https://your-site.atlassian.net/wiki/spaces/ENG/pages/123456/Title' });
@@ -1943,6 +1946,22 @@ async function loadGuide() {
 /* ---------- context files ---------- */
 const TEXTY = /\.(txt|md|markdown|csv|tsv|json|ya?ml|toml|log|xml|html?|js|ts|py|rs|go|java|rb|sh|sql|ini|cfg)$/i;
 const fmtSize = n => n < 1024 ? n + ' B' : n < 1048576 ? Math.round(n / 1024) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
+/* File picking: the native dialog in the app (WKWebView's own file input does not open one), the browser's input elsewhere. */
+const MIME = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', pdf: 'application/pdf', md: 'text/markdown', txt: 'text/plain', csv: 'text/csv', json: 'application/json', html: 'text/html', htm: 'text/html', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' };
+async function pickFiles({ multiple = true, extensions = null } = {}) {
+  if (!inApp) return new Promise(res => { const i = el('input', { type: 'file', multiple }); if (extensions) i.accept = extensions.map(x => '.' + x).join(','); i.onchange = () => res([...i.files]); i.click(); });
+  const picked = await window.__TAURI__.dialog.open({ multiple, directory: false, filters: extensions ? [{ name: 'Files', extensions }] : [] });
+  const paths = picked ? (Array.isArray(picked) ? picked : [picked]) : [];
+  if (!paths.length) return [];
+  const read = await window.__TAURI__.core.invoke('read_files', { paths });
+  const out = [];
+  for (const r of read) {
+    if (r.error) { console.warn(r.name, r.error); continue; }
+    const bytes = Uint8Array.from(atob(r.data), c => c.charCodeAt(0));
+    out.push(new File([bytes], r.name, { type: MIME[(r.name.split('.').pop() || '').toLowerCase()] || '' }));
+  }
+  return out;
+}
 const images = {}; // attached screenshots, kept in memory for the session (base64 by attachment id)
 async function addFiles(files) {
   for (const f of files) {
@@ -1983,6 +2002,7 @@ function renderContext() {
   }
 }
 $('#files').onchange = e => { addFiles([...e.target.files]); e.target.value = ''; };
+if (inApp) $('#files').closest('label').onclick = e => { e.preventDefault(); pickFiles().then(fs => fs.length && addFiles(fs)); };
 const desk = $('#desk');
 desk.addEventListener('dragover', e => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); desk.classList.add('drop'); } });
 desk.addEventListener('dragleave', () => desk.classList.remove('drop'));
