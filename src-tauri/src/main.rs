@@ -46,6 +46,20 @@ const KNOWN_AGENTS: &[(&str, &str, &str, &[&str])] = &[
     ("gemini", "Gemini CLI", "gemini", &["--acp"]),
     ("goose", "Goose", "goose", &["acp"]),
 ];
+/// Models the selected (or a given) agent offers, asked over ACP.
+#[tauri::command]
+async fn agent_models(app: AppHandle, agent_id: Option<String>) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Some(id) = agent_id.filter(|id| !id.is_empty()) {
+            let mut cfg = read_config(&app);
+            if !cfg["settings"].is_object() { cfg["settings"] = serde_json::json!({}); }
+            cfg["settings"]["agent"] = serde_json::json!(id);
+            write_config(&app, &cfg)?;
+        }
+        let (models, current) = agent(&app)?.models()?;
+        Ok(serde_json::json!({ "models": models.iter().map(|(id, name)| serde_json::json!({"id": id, "name": name})).collect::<Vec<_>>(), "current": current }))
+    }).await.map_err(|e| e.to_string())?
+}
 #[tauri::command]
 fn agents_discover() -> Vec<serde_json::Value> {
     let found = which_all(&KNOWN_AGENTS.iter().map(|a| a.2).collect::<Vec<_>>());
@@ -584,7 +598,7 @@ fn save_markdown(app: AppHandle, name: String, text: String) -> Result<String, S
 fn main() {
     tauri::Builder::default()
         .manage(Coach::default())
-        .invoke_handler(tauri::generate_handler![ask, save_markdown, extract_pdf, ws_info, ws_use, ws_forget, reveal, docs_list, doc_create, doc_load, doc_save, doc_delete, asset_save, diagrams_list, diagram_save, diagram_load, diagram_delete, files_list, file_add, file_read, file_delete, library_load, library_save, confluence_fetch, settings_get, settings_set, agents_discover, style_get, style_set, feedback_get, feedback_set, doc_snapshot, history_list, history_read, confluence_publish])
+        .invoke_handler(tauri::generate_handler![ask, save_markdown, extract_pdf, ws_info, ws_use, ws_forget, reveal, docs_list, doc_create, doc_load, doc_save, doc_delete, asset_save, diagrams_list, diagram_save, diagram_load, diagram_delete, files_list, file_add, file_read, file_delete, library_load, library_save, confluence_fetch, settings_get, settings_set, agents_discover, agent_models, style_get, style_set, feedback_get, feedback_set, doc_snapshot, history_list, history_read, confluence_publish])
         .run(tauri::generate_context!())
         .expect("error while running Margin");
 }

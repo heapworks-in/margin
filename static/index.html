@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Margin</title>
 <link href="vendor/fonts/fonts.css" rel="stylesheet">
-<script src="vendor/editor.js?v=43"></script>
+<script src="vendor/editor.js?v=45"></script>
 <style>
 :root{
   color-scheme:dark;
@@ -388,6 +388,8 @@ mark.c-mark.active{box-shadow:0 0 0 2px var(--accent-soft);filter:saturate(1.4)}
 .lrow{display:flex;align-items:baseline;gap:10px;font-size:12.5px;padding:4px 6px;border-radius:6px;cursor:pointer}
 .lrow:hover{background:var(--hover)}
 .lrow .q{flex:1;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pop.rubric .ledger .ctx-ws{margin:6px 0 0}
+#notes-btn{background:none;border:0;color:inherit;font:inherit;padding:0;cursor:pointer}
 .lrow small{color:var(--muted);white-space:nowrap}
 .lrow.bad small{color:var(--fact)}
 .lesson .teach{grid-column:2;justify-self:start;background:none;border:1px solid var(--line-strong);color:var(--accent-ink);border-radius:999px;padding:1px 8px;font-size:11.5px;cursor:pointer;margin-top:2px}
@@ -724,6 +726,7 @@ const store = inApp ? {
   library: { load: () => invoke('library_load').then(JSON.parse), save: items => invoke('library_save', { json: JSON.stringify(items) }) },
   settings: { get: () => invoke('settings_get'), set: value => invoke('settings_set', { value }) },
   agents: () => invoke('agents_discover'),
+  models: agentId => invoke('agent_models', { agentId: agentId || null }),
   style: { get: () => invoke('style_get'), set: text => invoke('style_set', { text }) },
   feedback: { get: () => invoke('feedback_get'), set: text => invoke('feedback_set', { text }) },
   history: { snapshot: (id, markdown, label) => invoke('doc_snapshot', { id, markdown, label }), list: id => invoke('history_list', { id }), read: (id, name) => invoke('history_read', { id, name }) },
@@ -747,6 +750,7 @@ const store = inApp ? {
   feedback: { get: async () => localStorage.getItem('docu-coach-feedback') || '', set: async text => localStorage.setItem('docu-coach-feedback', text) },
   history: { _k: id => 'docu-coach-history:' + id, snapshot: async function (id, markdown, label) { const l = JSON.parse(localStorage.getItem(this._k(id)) || '[]'); const name = `${Date.now()}-${label}.md`; l.unshift({ name, markdown, updated: Date.now(), size: markdown.length }); localStorage.setItem(this._k(id), JSON.stringify(l.slice(0, 20))); return name; }, list: async function (id) { return JSON.parse(localStorage.getItem(this._k(id)) || '[]').map(({ name, updated, size }) => ({ name, updated, size })); }, read: async function (id, name) { return (JSON.parse(localStorage.getItem(this._k(id)) || '[]').find(h => h.name === name) || {}).markdown || ''; } },
   publish: async () => { throw new Error('Publishing works in the app.'); },
+  models: async () => ({ models: MODELS.map(id => ({ id, name: id })), current: 'claude-opus-5-5' }),
   agents: async () => [{ id: 'claude', name: 'Claude Code (bundled)', path: 'bundled with Margin; uses your Claude login', found: true }, { id: 'devin', name: 'Devin', path: '`devin` is not on your PATH', found: false }, { id: 'custom', name: 'Custom ACP agent command', path: '', found: true }],
   settings: { get: async () => ({ agent: 'claude', command: '', args: '', model: 'claude-opus-5-5', effort: 'medium', skills: [], useMySettings: false, ...JSON.parse(localStorage.getItem('docu-coach-settings') || '{}') }), set: async function (v) { const cur = await this.get(); const next = { ...cur, ...v }; localStorage.setItem('docu-coach-settings', JSON.stringify(next)); return next; } },
   confluence: async () => { throw new Error('Confluence import works in the app.'); },
@@ -872,7 +876,7 @@ function renderMeta() {
   $('#status').innerHTML =
     `<span>Page <b>${pages ? pages.toFixed(pages % 1 ? 1 : 0) : '0'}</b></span><span><b>${n.toLocaleString()}</b> ${n === 1 ? 'word' : 'words'}</span><span><b>${mins || '–'}</b> min read</span>` +
     `<span>Sections <b>${have}/${expected}</b> written, <b class="${all.length && ready === all.length ? 'ok' : ''}">${ready}</b> ready</span>` +
-    `<span class="${open ? 'warn' : ''}"><b>${open}</b> open ${open === 1 ? 'note' : 'notes'}</span>` +
+    `<span class="${open ? 'warn' : ''}">${open ? `<button type="button" id="notes-btn"><b>${open}</b> open ${open === 1 ? 'note' : 'notes'}</button>` : '<b>0</b> open notes'}</span>` +
     (state.rubric ? `<span><button type="button" id="rubric-btn">Rubric <b>${rubricAvg().toFixed(1)}</b> · <span class="verdict ${state.rubric.verdict === 'SHIP' ? 'ship' : 'revise'}">${esc(state.rubric.verdict || 'REVISE')}</span></button></span>` : '') +
     (state.reader ? `<span><button type="button" id="reader-btn" title="${esc(state.reader.why)}">Reader <b class="verdict ${state.reader.decision === 'yes' ? 'ship' : state.reader.decision === 'no' ? 'revise' : ''}">${{ yes: 'says yes', ask: 'would ask', no: 'says no' }[state.reader.decision]}</b></button></span>` : '') +
     (state.claims.length ? `<span><button type="button" id="claims-btn">Claims <b>${state.claims.length}</b>${state.claims.filter(c => /^unsupported/i.test(c.source)).length ? ` · <span class="verdict revise">${state.claims.filter(c => /^unsupported/i.test(c.source)).length} unsupported</span>` : ''}</button></span>` : '') +
@@ -882,6 +886,7 @@ function renderMeta() {
   $('#lessons-btn').onclick = e => showLessonsPop(e.currentTarget);
   const rb = $('#rubric-btn'); if (rb) rb.onclick = e => showRubricPop(e.currentTarget);
   const cb = $('#claims-btn'); if (cb) cb.onclick = e => showClaimsPop(e.currentTarget);
+  const nb = $('#notes-btn'); if (nb) nb.onclick = e => showNotesPop(e.currentTarget);
   const rdb = $('#reader-btn'); if (rdb) rdb.onclick = e => { const pop = $('#pop'); clearTimeout(popTimer); popId = 'reader'; pop.className = 'pop rubric'; pop.replaceChildren(); const head = el('div', { className: 'card-head' }); head.append(el('b', { textContent: 'Your reader, after one read' })); pop.append(head, el('p', { style: 'margin:6px 0 0;font-size:13px;line-height:1.5;color:var(--ink-2)', textContent: state.reader.why }), el('p', { className: 'note', style: 'margin:8px 0 0;font-size:12px;color:var(--faint)', textContent: `Read ${ago(state.reader.at)}. Reader notes in the text show where it was decided.` })); placePop(pop, e.currentTarget); };
   const hb = $('#history-btn'); if (hb) hb.onclick = e => showHistoryPop(e.currentTarget);
   const cur = state.current, sec = all.find(x => x.title === cur), st = sec ? sectionStatus(cur, sec.words) : (cur === NOTES ? null : 'empty');
@@ -1227,6 +1232,25 @@ function placePop(pop, anchor) {
   pop.style.left = Math.max(8, Math.min(r.left, innerWidth - w - 8)) + 'px';
   pop.style.top = Math.max(8, r.top - h - 8) + 'px';
 }
+function showNotesPop(anchor) {
+  const pop = $('#pop'); clearTimeout(popTimer); popId = 'notes';
+  pop.className = 'pop rubric'; pop.replaceChildren();
+  const open = state.comments.filter(c => !c.resolved && c.kind !== 'draft');
+  const head = el('div', { className: 'card-head' }); head.append(el('b', { textContent: `${open.length} open note${open.length === 1 ? '' : 's'}` })); pop.append(head);
+  const bySection = {}; for (const c of open) (bySection[c.section || 'Document'] ||= []).push(c);
+  const t = el('div', { className: 'ledger' });
+  for (const [sec, list] of Object.entries(bySection)) {
+    t.append(el('div', { className: 'ctx-ws', textContent: sec }));
+    for (const c of list) {
+      const row = el('div', { className: 'lrow ' + (c.severity === 'high' ? 'bad' : '') });
+      row.append(el('span', { className: 'q', textContent: (c.quote ? '\u201c' + c.quote + '\u201d \u2014 ' : '') + c.body }), el('small', { textContent: KIND_SHORT[c.kind] + (c.persona ? ' \u00b7 ' + c.persona : '') }));
+      row.onclick = () => { hidePop(); if (c.anchored && c.quote) { activate(c.id, true); setTimeout(() => showPop(c.id), 50); } else { setCurrent(c.section); const h = doc.reveal(c.section); const b = [...document.querySelectorAll('.hbadge')].find(x => x.closest('h2, h3') && x.closest('h2, h3').textContent.startsWith(c.section)); showSectionPop(c.section, b || anchor); } };
+      t.append(row);
+    }
+  }
+  pop.append(t, el('p', { className: 'note', style: 'margin:8px 0 0;font-size:12px;color:var(--faint)', textContent: 'Underlined notes open on the text. Notes about a whole section open from its heading.' }));
+  placePop(pop, anchor);
+}
 function showClaimsPop(anchor) {
   const pop = $('#pop'); clearTimeout(popTimer); popId = 'claims';
   pop.className = 'pop rubric'; pop.replaceChildren();
@@ -1327,7 +1351,7 @@ document.addEventListener('mouseover', e => {
   clearTimeout(popTimer); popTimer = setTimeout(hidePop, 300);
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') hidePop(); });
-document.addEventListener('mousedown', e => { if (!e.target.closest('#pop') && !e.target.closest('.hbadge') && !e.target.closest('mark[data-comment]') && !e.target.closest('#lessons-btn') && !e.target.closest('#rubric-btn') && !e.target.closest('#claims-btn') && !e.target.closest('#history-btn') && !e.target.closest('#reader-btn')) hidePop(); });
+document.addEventListener('mousedown', e => { if (!e.target.closest('#pop') && !e.target.closest('.hbadge') && !e.target.closest('mark[data-comment]') && !e.target.closest('#lessons-btn') && !e.target.closest('#rubric-btn') && !e.target.closest('#claims-btn') && !e.target.closest('#history-btn') && !e.target.closest('#reader-btn') && !e.target.closest('#notes-btn')) hidePop(); });
 $('#scroll').addEventListener('scroll', hidePop, { passive: true });
 function toggleResolved(c) {
   c.resolved = !c.resolved;
@@ -1630,7 +1654,8 @@ async function renderSettings() {
   const args = el('input', { type: 'text', value: cfg.args || '', placeholder: 'extra arguments, separated by spaces' });
   const cl = el('label', { textContent: 'Command' }); cl.append(cmd); const argl = el('label', { textContent: 'Arguments' }); argl.append(args);
   const custom = el('div', { style: 'display:flex;flex-direction:column;gap:12px' }); custom.append(cl, argl, el('p', { className: 'note', textContent: 'Examples: npx -y @agentclientprotocol/codex-acp (command: npx, arguments: -y @agentclientprotocol/codex-acp). The agent must speak ACP over stdio.' }));
-  const syncAgent = () => { custom.style.display = agent.value === 'custom' ? 'flex' : 'none'; }; syncAgent();
+  let reloadModels = () => {};
+  const syncAgent = () => { custom.style.display = agent.value === 'custom' ? 'flex' : 'none'; reloadModels(); }; syncAgent();
   const al = list;
   a.append(al, custom);
   box.append(a);
@@ -1638,9 +1663,19 @@ async function renderSettings() {
   // Model, effort, skills
   const m = el('section', { className: 'set-sec' });
   m.append(el('h2', { textContent: 'Model and skills' }));
-  const model = el('input', { type: 'text', value: cfg.model || '', placeholder: 'claude-opus-5-5' }); model.setAttribute('list', 'models');
-  const dl = el('datalist', { id: 'models' }); for (const x of MODELS) dl.append(el('option', { value: x }));
-  const ml = el('label', { textContent: 'Model (a Claude model id for Claude Code; for another agent, a model id it accepts)' }); ml.append(model, dl);
+  const model = el('input', { type: 'text', value: cfg.model || '', placeholder: 'the agent\u2019s default' }); model.setAttribute('list', 'models');
+  const dl = el('datalist', { id: 'models' });
+  const mstat = el('small', { className: 'note', style: 'display:block;margin-top:4px', textContent: 'Asking the agent which models it offers\u2026' });
+  const ml = el('label', { textContent: 'Model' }); ml.append(model, dl, mstat);
+  const loadModels = async () => {
+    dl.replaceChildren(); mstat.textContent = 'Asking the agent which models it offers\u2026';
+    try {
+      const r = await store.models(agent.value === 'custom' ? '' : agent.value);
+      for (const x of r.models) dl.append(el('option', { value: x.id, textContent: x.name !== x.id ? x.name : '' }));
+      mstat.textContent = r.models.length ? `${r.models.length} models from this agent${r.current ? ` \u00b7 its default is ${r.current}` : ''}. Empty uses the default.` : 'This agent did not list its models; type a model id it accepts, or leave empty for its default.';
+    } catch (e) { for (const x of MODELS) dl.append(el('option', { value: x })); mstat.textContent = 'Could not ask the agent (' + String(e).slice(0, 120) + '). Showing Claude models.'; }
+  };
+  reloadModels = loadModels; loadModels();
   const effort = el('select'); for (const x of ['low', 'medium', 'high', 'xhigh', 'max']) effort.append(el('option', { value: x, textContent: x })); effort.value = cfg.effort || 'medium';
   const efl = el('label', { textContent: 'Effort (Claude Code): how hard the model thinks per review; higher is slower and costlier' }); efl.append(effort);
   const skills = el('input', { type: 'text', value: (cfg.skills || []).join(', '), placeholder: 'e.g. docx, pdf, my-team-style' });
@@ -1908,6 +1943,7 @@ async function loadGuide() {
 /* ---------- context files ---------- */
 const TEXTY = /\.(txt|md|markdown|csv|tsv|json|ya?ml|toml|log|xml|html?|js|ts|py|rs|go|java|rb|sh|sql|ini|cfg)$/i;
 const fmtSize = n => n < 1024 ? n + ' B' : n < 1048576 ? Math.round(n / 1024) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
+const images = {}; // attached screenshots, kept in memory for the session (base64 by attachment id)
 async function addFiles(files) {
   for (const f of files) {
     const a = { id: uid(), name: f.name, size: f.size, kind: 'text', text: '', note: '' };

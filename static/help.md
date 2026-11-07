@@ -52,6 +52,7 @@ Put the cursor in a section and press **Review this section**. Notes appear as u
 
 - Click an underline, or just place the cursor in it, to see the note. English notes carry a fix: **Accept** applies it in place. **Resolve** clears any note.
 - Click the heading badge for the section's reviewer checks (pass, partial, fail) and the section status: not started, drafted, needs work, ready.
+- The status bar's **open notes** count is a button: it lists every open note by section. Underlined notes open on the text; notes about a whole section (nothing to underline) open from the section's heading badge.
 - **Fix English** returns the whole section corrected, keeping your meaning and facts, plus the rules you keep hitting.
 - **Lint** checks the document against your style rules (Settings → Style rules; a sensible default is built in).
 - **Check facts** lists every claim a reviewer might doubt. **Claims** goes further: a ledger of every claim with its source (brief, attachment, the document, or unsupported). Unsupported claims are underlined; the status bar shows the count.
@@ -91,7 +92,7 @@ Then **Rehearse** mode. **Start the meeting**: the panel asks its hardest questi
 
 - **Default data folder**: switch between workspaces or create one.
 - **Coach agent**: the bundled Claude Code, anything found on your PATH, or a custom ACP command.
-- **Model and skills** (Claude Code): model id, effort (low to max; higher is slower and costlier), skills to preload, and whether to load your own `~/.claude` settings. Off keeps the coach isolated.
+- **Model and skills**: the model list comes from the agent you picked (Claude Code or Devin each report their own); leave it empty for the agent's default. For Claude Code also effort (low to max; higher is slower and costlier), skills to preload, and whether to load your own `~/.claude` settings. Off keeps the coach isolated.
 - **Style rules**: your house style, applied in every review and by Lint. Shared with the team through the workspace.
 - **Reviewer feedback**: what Learn from feedback collected.
 

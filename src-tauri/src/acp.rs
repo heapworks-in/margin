@@ -118,6 +118,31 @@ impl Acp {
         }
     }
 
+    /// The models the agent offers (ACP `session/new` → `models.availableModels`), and its current one.
+    pub fn models(&self) -> Result<(Vec<(String, String)>, String), String> {
+        let session = self.call("session/new", json!({"cwd": self.workdir.to_string_lossy(), "mcpServers": []}), 120)?;
+        let sid = session["sessionId"].as_str().unwrap_or("").to_string();
+        // Agents list models either as `models` (older ACP) or as the `model` config option.
+        let (mut list, mut current) = (Vec::new(), String::new());
+        if let Some(a) = session["models"]["availableModels"].as_array() {
+            list = a.iter().filter_map(|m| Some((m["modelId"].as_str()?.to_string(), m["name"].as_str().unwrap_or(m["modelId"].as_str()?).to_string()))).collect();
+            current = session["models"]["currentModelId"].as_str().unwrap_or("").to_string();
+        }
+        if list.is_empty() {
+            if let Some(opt) = session["configOptions"].as_array().and_then(|o| o.iter().find(|o| o["category"] == "model" || o["id"] == "model")) {
+                list = opt["options"].as_array().map(|a| a.iter().filter_map(|m| {
+                    let v = m["value"].as_str()?.to_string();
+                    let d = m["description"].as_str().unwrap_or("");
+                    let name = m["name"].as_str().unwrap_or(&v);
+                    Some((v.clone(), if d.is_empty() { name.to_string() } else { format!("{name} \u{2014} {d}") }))
+                }).collect()).unwrap_or_default();
+                current = opt["currentValue"].as_str().unwrap_or("").to_string();
+            }
+        }
+        if !sid.is_empty() { let (tx, _) = channel(); let _ = self.request("session/close", json!({"sessionId": sid}), tx); }
+        Ok((list, current))
+    }
+
     /// Runs one coach turn in a fresh session. Calls `on_text` for each streamed
     /// chunk and returns the stop reason.
     pub fn ask(&self, system: &str, prompt: &str, images: &[(String, String)], run: &RunConfig, mut on_text: impl FnMut(&str)) -> Result<Option<String>, String> {
@@ -137,7 +162,9 @@ impl Acp {
         let prompt = prompt_text.as_str();
         if !run.claude && !run.model.is_empty() {
             let sid = session["sessionId"].as_str().unwrap_or("").to_string();
-            let _ = self.call("session/set_model", json!({"sessionId": sid, "modelId": run.model}), 30);
+            if self.call("session/set_config_option", json!({"sessionId": sid, "configId": "model", "value": run.model}), 30).is_err() {
+                let _ = self.call("session/set_model", json!({"sessionId": sid, "modelId": run.model}), 30);
+            }
         }
         let sid = session["sessionId"].as_str().ok_or("the Claude agent sent no session id")?.to_string();
         let (tx, rx) = channel();
@@ -220,6 +247,29 @@ mod devin {
         let stop = acp.ask("You are a test. Reply with exactly: pong", "ping", &[], &super::RunConfig { claude: false, ..Default::default() }, |t| text.push_str(t)).unwrap();
         println!("stop={stop:?} text={text}");
         assert!(text.to_lowercase().contains("pong"), "got: {text}");
+    }
+}
+
+#[cfg(test)]
+mod models {
+    /// `cargo test models -- --ignored --nocapture`: the bundled Claude adapter and Devin both list their models.
+    #[test] #[ignore]
+    fn agents_list_models() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let workdir = std::env::temp_dir().join("docu-coach-test"); std::fs::create_dir_all(&workdir).unwrap();
+        let script = root.join("agent/node_modules/@agentclientprotocol/claude-agent-acp/dist/index.js");
+        let node = std::env::var("DOCU_COACH_NODE").unwrap_or_else(|_| "node".into());
+        let claude = super::Acp::start(node.as_ref(), &[script.to_string_lossy().to_string()], &workdir).unwrap();
+        let (list, current) = claude.models().unwrap();
+        println!("claude: current={current} {list:?}");
+        assert!(list.iter().any(|(id, _)| id == "opus"), "claude adapter should offer opus");
+        let devin = std::path::PathBuf::from(std::env::var("HOME").unwrap()).join(".local/bin/devin");
+        if devin.exists() {
+            let d = super::Acp::start(&devin, &["acp".to_string()], &workdir).unwrap();
+            let (list, current) = d.models().unwrap();
+            println!("devin: current={current} {list:?}");
+            assert!(!list.is_empty(), "devin should list models");
+        }
     }
 }
 
