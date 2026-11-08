@@ -26,13 +26,31 @@ fn which_all(names: &[&str]) -> std::collections::HashMap<String, PathBuf> {
     }
     found
 }
-fn which(name: &str) -> Option<PathBuf> {
-    which_all(&[name]).remove(name).or_else(|| {
-        let home = std::env::var("HOME").unwrap_or_default();
-        [format!("/opt/homebrew/bin/{name}"), format!("/usr/local/bin/{name}"), format!("{home}/.local/bin/{name}"), format!("{home}/.npm-global/bin/{name}")]
-            .into_iter().map(PathBuf::from).find(|p| p.exists())
-    })
+/// Places a binary lives when the login shell did not say: checked without spawning anything.
+fn well_known(name: &str) -> Option<PathBuf> {
+    let home = std::env::var("HOME").unwrap_or_default();
+    [format!("/opt/homebrew/bin/{name}"), format!("/usr/local/bin/{name}"), format!("{home}/.local/bin/{name}"), format!("{home}/.npm-global/bin/{name}"), format!("{home}/.cargo/bin/{name}")]
+        .into_iter().map(PathBuf::from).find(|p| p.exists())
 }
+fn which(name: &str) -> Option<PathBuf> {
+    if let Some(p) = discovered().get(name) { return Some(p.clone()); }
+    which_all(&[name]).remove(name).or_else(|| well_known(name))
+}
+/// One login-shell lookup for every binary we care about, done once per app run (a login shell costs about a second).
+fn discovered() -> std::collections::HashMap<String, PathBuf> {
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<Option<std::collections::HashMap<String, PathBuf>>>> = std::sync::OnceLock::new();
+    let cell = CACHE.get_or_init(|| std::sync::Mutex::new(None));
+    let mut slot = cell.lock().unwrap();
+    if DISCOVERY_RESET.swap(false, std::sync::atomic::Ordering::SeqCst) { *slot = None; }
+    if let Some(m) = slot.as_ref() { return m.clone(); }
+    let names: Vec<&str> = KNOWN_AGENTS.iter().map(|a| a.2).chain(std::iter::once("node")).collect();
+    let mut found = which_all(&names);
+    for n in names { if !found.contains_key(n) { if let Some(p) = well_known(n) { found.insert(n.to_string(), p); } } }
+    *slot = Some(found.clone());
+    found
+}
+fn forget_discovered() { DISCOVERY_RESET.store(true, std::sync::atomic::Ordering::SeqCst); }
+static DISCOVERY_RESET: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 fn find_node() -> PathBuf {
     if let Ok(p) = std::env::var("DOCU_COACH_NODE") { return p.into(); }
     which("node").unwrap_or_else(|| "node".into())
@@ -61,11 +79,17 @@ async fn agent_models(app: AppHandle, agent_id: Option<String>) -> Result<serde_
     }).await.map_err(|e| e.to_string())?
 }
 #[tauri::command]
-fn agents_discover() -> Vec<serde_json::Value> {
-    let found = which_all(&KNOWN_AGENTS.iter().map(|a| a.2).collect::<Vec<_>>());
+async fn agents_discover(refresh: Option<bool>) -> Vec<serde_json::Value> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if refresh.unwrap_or(false) { forget_discovered(); }
+        agents_list()
+    }).await.unwrap_or_default()
+}
+fn agents_list() -> Vec<serde_json::Value> {
+    let found = discovered();
     let mut list = vec![serde_json::json!({ "id": "claude", "name": "Claude Code (bundled)", "path": "bundled with Margin; uses your Claude login", "found": true })];
     for (id, name, bin, args) in KNOWN_AGENTS {
-        let path = found.get(*bin).cloned().or_else(|| which(bin));
+        let path = found.get(*bin).cloned();
         list.push(serde_json::json!({ "id": id, "name": name, "found": path.is_some(),
             "path": path.map(|p| format!("{} {}", p.display(), args.join(" ")).trim().to_string()).unwrap_or_else(|| format!("`{bin}` is not on your PATH")) }));
     }

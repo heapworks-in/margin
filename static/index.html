@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Margin</title>
 <link href="vendor/fonts/fonts.css" rel="stylesheet">
-<script src="vendor/editor.js?v=48"></script>
+<script src="vendor/editor.js?v=49"></script>
 <style>
 :root{
   color-scheme:dark;
@@ -746,7 +746,7 @@ const store = inApp ? {
   diagrams: { list: () => invoke('diagrams_list'), save: (name, svg, scene) => invoke('diagram_save', { name, svg, scene }), load: name => invoke('diagram_load', { name }), remove: name => invoke('diagram_delete', { name }) },
   library: { load: () => invoke('library_load').then(JSON.parse), save: items => invoke('library_save', { json: JSON.stringify(items) }) },
   settings: { get: () => invoke('settings_get'), set: value => invoke('settings_set', { value }) },
-  agents: () => invoke('agents_discover'),
+  agents: refresh => invoke('agents_discover', { refresh: !!refresh }),
   models: agentId => invoke('agent_models', { agentId: agentId || null }),
   style: { get: () => invoke('style_get'), set: text => invoke('style_set', { text }) },
   templates: { get: () => invoke('templates_get'), set: value => invoke('templates_set', { value }) },
@@ -1715,16 +1715,23 @@ async function renderSettings() {
   // Agent
   const a = el('section', { className: 'set-sec' });
   a.append(el('h2', { textContent: 'Coach agent (ACP)' }), el('p', { className: 'note', textContent: 'The coach talks to an agent over the Agent Client Protocol. Claude Code is bundled and uses your Claude login. Other agents are found on your PATH at startup: nothing to configure. Pick one.' }));
-  let agents = []; try { agents = await store.agents(); } catch {}
   const agent = { value: cfg.agent || 'claude' };
   const list = el('div', { className: 'agents' });
-  for (const ag of agents) {
-    const row = el('label', { className: 'agent' + (ag.found ? '' : ' missing') });
-    const r = el('input', { type: 'radio', name: 'agent', value: ag.id, checked: agent.value === ag.id, disabled: !ag.found });
-    r.onchange = () => { agent.value = ag.id; syncAgent(); };
-    row.append(r, el('span', { className: 'n', textContent: ag.name }), el('small', { textContent: ag.path }));
-    list.append(row);
-  }
+  const fillAgents = async refresh => {
+    list.replaceChildren(el('div', { className: 'lessons-empty', textContent: refresh ? 'Looking again on your PATH\u2026' : 'Looking for agents on your PATH\u2026' }));
+    let agents = []; try { agents = await store.agents(refresh); } catch {}
+    list.replaceChildren();
+    for (const ag of agents) {
+      const row = el('label', { className: 'agent' + (ag.found ? '' : ' missing') });
+      const r = el('input', { type: 'radio', name: 'agent', value: ag.id, checked: agent.value === ag.id, disabled: !ag.found });
+      r.onchange = () => { agent.value = ag.id; syncAgent(); };
+      row.append(r, el('span', { className: 'n', textContent: ag.name }), el('small', { textContent: ag.path }));
+      list.append(row);
+    }
+    const again = el('button', { type: 'button', className: 'btn', textContent: 'Look again', title: 'Installed a new agent? Search your PATH again.' }); again.onclick = () => fillAgents(true);
+    list.append(again);
+  };
+  fillAgents(false);
   const cmd = el('input', { type: 'text', value: cfg.command || '', placeholder: '/usr/local/bin/some-acp-agent' });
   const args = el('input', { type: 'text', value: cfg.args || '', placeholder: 'extra arguments, separated by spaces' });
   const cl = el('label', { textContent: 'Command' }); cl.append(cmd); const argl = el('label', { textContent: 'Arguments' }); argl.append(args);
