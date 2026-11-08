@@ -14,7 +14,8 @@ This page walks through one document from blank page to "ship it". Read it once;
 ## 2. Start a document
 
 - Click **Margin** (top left) for the Library. Type a title, pick a type, **Create**.
-- Not sure of the type? **Which type?** asks four or so yes/no questions about the reader's next action and picks for you: one-pager, design doc, RFC, ADR, PRFAQ, tech strategy, postmortem, launch readiness, runbook, status update, blog post, LinkedIn post, X thread.
+- Not sure of the type? **Which type?** asks a few yes/no questions about the reader's next action and picks for you: one-pager, design doc, RFC, ADR, API specification, technical specification, PRFAQ, tech strategy, postmortem, launch readiness, runbook, status update, blog post, LinkedIn post, X thread.
+- Your own types: **New type…** (Library or Settings → Document types) takes a name, the reviewer personas for its panel, and one line per section: `title | the question it must answer | what reviewers check`. Or start from the open document's headings. Custom types live in the workspace's `templates.json`, so the team shares them, and appear in every picker.
 - Already have something? **Import** takes Markdown, text, Word (.docx) and Confluence pages (email + API token).
 - The spine on the left (the thin ticks) is every section the template expects. Hover a tick for the section name and the question it must answer. It fills in as you write and turns green when a section is ready.
 

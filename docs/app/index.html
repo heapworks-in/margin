@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Margin</title>
 <link href="vendor/fonts/fonts.css" rel="stylesheet">
-<script src="vendor/editor.js?v=46"></script>
+<script src="vendor/editor.js?v=48"></script>
 <style>
 :root{
   color-scheme:dark;
@@ -668,6 +668,27 @@ const TEMPLATES = {
     S('Risks', 'What could slip and why.', 'risks named with likelihood and impact'),
     S('Asks', 'What you need, from whom, by when.', 'each ask has an owner and a date'),
   ]},
+  api: { name: 'API specification', readers: ['Implementing engineer', 'Dependent team lead', 'Staff peer'], sections: [
+    S('Overview', 'What the API does, who calls it, and the one thing it must get right.', 'purpose in one paragraph, callers named, scope bounded'),
+    S('Concepts and resources', 'The nouns: resources, their fields, identifiers, lifecycles.', 'every resource defined once, identifiers and ownership clear, lifecycle states listed'),
+    S('Authentication and authorization', 'How a caller proves who they are and what they may do.', 'auth scheme named, scopes or roles listed, failure responses specified'),
+    S('Operations', 'Each operation: method and path, request, response, errors. A table per resource works well.', 'every operation has request and response shapes, required vs optional fields marked, idempotency stated'),
+    S('Errors', 'The error model and every error a caller can see.', 'one error shape, codes enumerated, retryable vs not marked'),
+    S('Versioning and compatibility', 'How the API changes without breaking callers.', 'versioning scheme stated, what counts as breaking defined, deprecation window given'),
+    S('Limits and performance', 'Rate limits, payload sizes, latency targets, pagination.', 'rate limits with numbers, pagination described, latency targets stated'),
+    S('Examples', 'Complete request and response pairs for the three most common flows.', 'examples are complete and copy-pasteable, cover the main flows, match the spec'),
+    S('Open questions', 'What is not decided, who owns it, by when.', 'each question has an owner and a date'),
+  ]},
+  techspec: { name: 'Technical specification', readers: ['Implementing engineer', 'Staff peer', 'On-call SRE'], sections: [
+    S('Summary', 'What is being built and why, in one paragraph. The decision is already made; this is how.', 'one paragraph, readable alone, links the decision'),
+    S('Background', 'What exists today, what constrains the solution.', 'current state described, constraints named, assumptions marked'),
+    S('Requirements', 'Functional and non-functional, each testable, with numbers.', 'each requirement testable, non-functional ones have numbers, priorities marked'),
+    S('Detailed design', 'Components, data model, interfaces, sequence of calls. Precise enough to implement without asking.', 'components and responsibilities, data model with types, interfaces with signatures, sequence for the main flow'),
+    S('Edge cases and failure handling', 'What happens at the boundaries and when a dependency fails.', 'edge cases enumerated, each failure has a handling rule, retries and timeouts stated'),
+    S('Testing and verification', 'How you will know it works: unit, integration, load, acceptance.', 'test levels named, acceptance criteria tied to requirements, load target stated'),
+    S('Rollout', 'Phases, flags, migration, rollback.', 'phased, feature flag or kill switch, rollback steps, data migration covered'),
+    S('Open questions', 'What is not decided, who owns the answer, by when.', 'each question has an owner and a date'),
+  ]},
   blog: { name: 'Blog post', readers: ['Staff peer', 'Implementing engineer'], sections: [
     S('Hook', 'The first two lines. Why should an engineer keep reading?', 'specific, interesting, no generic opening'),
     S('The problem', 'What problem did you face? Make it concrete.', 'concrete situation, stakes'),
@@ -728,6 +749,7 @@ const store = inApp ? {
   agents: () => invoke('agents_discover'),
   models: agentId => invoke('agent_models', { agentId: agentId || null }),
   style: { get: () => invoke('style_get'), set: text => invoke('style_set', { text }) },
+  templates: { get: () => invoke('templates_get'), set: value => invoke('templates_set', { value }) },
   feedback: { get: () => invoke('feedback_get'), set: text => invoke('feedback_set', { text }) },
   history: { snapshot: (id, markdown, label) => invoke('doc_snapshot', { id, markdown, label }), list: id => invoke('history_list', { id }), read: (id, name) => invoke('history_read', { id, name }) },
   publish: (parentUrl, title, html, email, token, pageId) => invoke('confluence_publish', { parentUrl, title, html, email, token, pageId: pageId || null }),
@@ -747,6 +769,7 @@ const store = inApp ? {
   files: { _k: 'docu-coach-files', list: async function () { return JSON.parse(localStorage.getItem(this._k) || '[]').map(({ name, size, updated }) => ({ name, size, updated })); }, add: async function (name, data) { const l = JSON.parse(localStorage.getItem(this._k) || '[]').filter(f => f.name !== name); l.unshift({ name, data, size: Math.round(data.length * 3 / 4), updated: Date.now() }); localStorage.setItem(this._k, JSON.stringify(l)); return name; }, read: async function (name) { return (JSON.parse(localStorage.getItem(this._k) || '[]').find(f => f.name === name) || {}).data; }, remove: async function (name) { localStorage.setItem(this._k, JSON.stringify(JSON.parse(localStorage.getItem(this._k) || '[]').filter(f => f.name !== name))); } },
   library: { load: async () => JSON.parse(localStorage.getItem('docu-coach-library') || '[]'), save: async items => localStorage.setItem('docu-coach-library', JSON.stringify(items)) },
   style: { get: async () => localStorage.getItem('docu-coach-style') || '', set: async text => localStorage.setItem('docu-coach-style', text) },
+  templates: { get: async () => JSON.parse(localStorage.getItem('docu-coach-templates') || '{}'), set: async value => localStorage.setItem('docu-coach-templates', JSON.stringify(value)) },
   feedback: { get: async () => localStorage.getItem('docu-coach-feedback') || '', set: async text => localStorage.setItem('docu-coach-feedback', text) },
   history: { _k: id => 'docu-coach-history:' + id, snapshot: async function (id, markdown, label) { const l = JSON.parse(localStorage.getItem(this._k(id)) || '[]'); const name = `${Date.now()}-${label}.md`; l.unshift({ name, markdown, updated: Date.now(), size: markdown.length }); localStorage.setItem(this._k(id), JSON.stringify(l.slice(0, 20))); return name; }, list: async function (id) { return JSON.parse(localStorage.getItem(this._k(id)) || '[]').map(({ name, updated, size }) => ({ name, updated, size })); }, read: async function (id, name) { return (JSON.parse(localStorage.getItem(this._k(id)) || '[]').find(h => h.name === name) || {}).markdown || ''; } },
   publish: async () => { throw new Error('Publishing works in the app.'); },
@@ -790,6 +813,55 @@ const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
 const words = t => (t.trim().match(/\S+/g) || []).length;
 const uid = () => Math.random().toString(36).slice(2, 9);
 const tpl = () => TEMPLATES[state.templateId] || TEMPLATES.design;
+/* ---------- custom document types: workspace templates.json, same shape as the built-ins ---------- */
+let customTemplates = {};
+function fillTemplateSelect(sel, value) {
+  sel.replaceChildren();
+  for (const [id, t] of Object.entries(TEMPLATES)) if (!id.startsWith('custom:')) sel.append(el('option', { value: id, textContent: t.name }));
+  const customs = Object.keys(TEMPLATES).filter(id => id.startsWith('custom:'));
+  if (customs.length) { const g = el('optgroup', { label: 'Your document types' }); for (const id of customs) g.append(el('option', { value: id, textContent: TEMPLATES[id].name })); sel.append(g); }
+  if (value && TEMPLATES[value]) sel.value = value;
+}
+async function loadCustomTemplates() {
+  try { customTemplates = (await store.templates.get()) || {}; } catch { customTemplates = {}; }
+  for (const id of Object.keys(TEMPLATES)) if (id.startsWith('custom:')) delete TEMPLATES[id];
+  for (const [id, t] of Object.entries(customTemplates)) if (t && t.name && Array.isArray(t.sections)) TEMPLATES['custom:' + id] = { name: t.name, readers: t.readers || [], custom: true, sections: t.sections.map(x => S(x.title, x.hint || '', x.checks || '')) };
+  fillTemplateSelect($('#template'), state.templateId);
+}
+const templateText = t => (t.sections || []).map(x => [x.title, x.hint, x.checks].join(' | ')).join('\n');
+function parseTemplateText(text) {
+  return text.split('\n').map(l => l.trim()).filter(Boolean).map(l => { const [title, hint, checks] = l.split('|').map(x => (x || '').trim()); return { title, hint: hint || '', checks: checks || '' }; }).filter(x => x.title);
+}
+/** Editor for a custom type. `id` null = new; `seed` prefills (e.g. from the open document). */
+function openTemplateEditor(id, seed) {
+  const m = $('#import'); m.replaceChildren();
+  const cur = id ? customTemplates[id] : seed || null;
+  const box = el('div', { className: 'box wide' });
+  box.append(el('h2', { textContent: id ? 'Edit document type' : 'New document type' }), el('p', { className: 'note', textContent: 'One section per line: title | the question the section must answer | what reviewers check (comma-separated). The coach uses the question as the hint and the checks as its pass/fail list. Saved in the workspace (templates.json), so the team shares it.' }));
+  const name = el('input', { type: 'text', placeholder: 'e.g. Test plan', value: cur ? cur.name : '' });
+  const readers = el('input', { type: 'text', placeholder: 'Reviewer personas for the panel, e.g. Staff peer, On-call SRE, Implementing engineer', value: cur ? (cur.readers || []).join(', ') : '' });
+  const ln = el('label', { textContent: 'Name' }); ln.append(name); const lr = el('label', { textContent: 'Readers (panel personas: ' + Object.keys(PERSONAS).join(', ') + ')' }); lr.append(readers);
+  const ta = el('textarea', { rows: 12, placeholder: 'Scope | What is in and out of this test effort? | in and out of scope listed, risks named\nTest strategy | Which levels and why? | levels named, coverage targets with numbers', style: 'background:var(--canvas);border:1px solid var(--line-strong);border-radius:8px;color:var(--ink);font:12.5px/1.6 var(--mono);padding:10px;outline:none;resize:vertical' });
+  ta.value = cur ? templateText(cur) : '';
+  const foot = el('div', { className: 'foot' }); const err = el('span', { className: 'err' });
+  const cancel = el('button', { type: 'button', className: 'btn', textContent: 'Cancel' }); cancel.onclick = () => { m.hidden = true; };
+  const saveBtn = el('button', { type: 'button', className: 'btn primary', textContent: id ? 'Save' : 'Create type' });
+  saveBtn.onclick = async () => {
+    const sections = parseTemplateText(ta.value);
+    if (!name.value.trim()) { err.textContent = 'Give it a name.'; return; }
+    if (sections.length < 2) { err.textContent = 'At least two sections.'; return; }
+    const key = id || slugId(name.value);
+    customTemplates[key] = { name: name.value.trim(), readers: readers.value.split(',').map(x => x.trim()).filter(Boolean), sections };
+    try { await store.templates.set(customTemplates); } catch (e) { err.textContent = String(e); return; }
+    await loadCustomTemplates(); m.hidden = true; renderAll(); if (!$('#settings').hidden) renderSettings(); if (!$('#library').hidden) renderLibrary();
+  };
+  foot.append(err, cancel, saveBtn);
+  if (id) { const del = el('button', { type: 'button', className: 'btn', textContent: 'Delete type' }); del.onclick = async () => { delete customTemplates[id]; await store.templates.set(customTemplates); await loadCustomTemplates(); m.hidden = true; renderAll(); if (!$('#settings').hidden) renderSettings(); if (!$('#library').hidden) renderLibrary(); }; foot.prepend(del); }
+  box.append(ln, lr, ta, foot); m.append(box); m.hidden = false; name.focus();
+}
+const slugId = s => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'type';
+/** The open document's headings as a starting point for a new type. */
+const templateFromDocument = () => ({ name: '', readers: tpl().readers || [], sections: sections().filter(s => s.title).map(s => ({ title: s.title, hint: tplHint(s.title) || '', checks: tplChecks(s.title).join(', ') })) });
 let doc = null; // the editor (editor/main.js)
 const hintFor = () => ''; // hints live in the section spine, not in the text
 const tplSection = t => tpl().sections.find(s => s.title.toLowerCase() === (t || '').trim().toLowerCase());
@@ -1521,10 +1593,11 @@ async function renderLibrary() {
   dright.append(imp); dh.append(dright); docsSec.append(dh);
   const form = el('form', { className: 'lib-new' });
   const title = el('input', { placeholder: 'Title of a new document' }); title.setAttribute('aria-label', 'Title');
-  const pick = el('select'); for (const [id, t] of Object.entries(TEMPLATES)) pick.append(el('option', { value: id, textContent: t.name }));
+  const pick = el('select'); fillTemplateSelect(pick, 'design');
   pick.value = state.templateId || 'design';
   const which = el('button', { type: 'button', className: 'btn', textContent: 'Which type?' }); which.onclick = () => openRouter(t => { pick.value = t; });
-  form.append(title, pick, which, el('button', { type: 'submit', className: 'btn primary', textContent: 'Create' }));
+  const newType = el('button', { type: 'button', className: 'btn', textContent: 'New type…', title: 'Define your own document type' }); newType.onclick = () => openTemplateEditor(null);
+  form.append(title, pick, which, newType, el('button', { type: 'submit', className: 'btn primary', textContent: 'Create' }));
   form.onsubmit = e => { e.preventDefault(); createDoc(title.value.trim(), pick.value); };
   docsSec.append(form);
   const grid = el('div', { className: 'lib-grid' });
@@ -1687,6 +1760,17 @@ async function renderSettings() {
   m.append(ml, efl, sl, minel);
   box.append(m);
 
+  // Custom document types (workspace)
+  const ct = el('section', { className: 'set-sec' });
+  ct.append(el('h2', { textContent: 'Document types' }), el('p', { className: 'note', textContent: 'The built-in types cover one-pagers, design docs, RFCs, ADRs, API and technical specifications, PRFAQs, strategies, postmortems, launch readiness, runbooks, status updates and posts. Add your own here; they are saved in the workspace and appear in every picker.' }));
+  const clist = el('div', { className: 'agents' });
+  for (const [id, t] of Object.entries(customTemplates)) { const row = el('div', { className: 'agent', style: 'cursor:pointer' }); row.append(el('span'), el('span', { className: 'n', textContent: t.name }), el('small', { textContent: (t.sections || []).map(x => x.title).join(' · ') })); row.onclick = () => openTemplateEditor(id); clist.append(row); }
+  if (!Object.keys(customTemplates).length) clist.append(el('div', { className: 'lessons-empty', textContent: 'No custom types yet.' }));
+  const crow = el('div', { style: 'display:flex;gap:8px;flex-wrap:wrap' });
+  const cnew = el('button', { type: 'button', className: 'btn', textContent: 'New type…' }); cnew.onclick = () => openTemplateEditor(null);
+  const cfrom = el('button', { type: 'button', className: 'btn', textContent: 'From the open document’s headings' }); cfrom.onclick = () => openTemplateEditor(null, templateFromDocument()); if (!state.id || !sections().length) cfrom.disabled = true;
+  crow.append(cnew, cfrom); ct.append(clist, crow); box.append(ct);
+
   // Style rules (workspace)
   const st = el('section', { className: 'set-sec' });
   st.append(el('h2', { textContent: 'Style rules' }), el('p', { className: 'note', textContent: 'Your house style, applied in every review, draft and Lint. Stored in the workspace as style.md so the whole team can share it. Empty uses the built-in rules.' }));
@@ -1726,9 +1810,11 @@ const ROUTER = [
   { q: 'Did an incident happen that the team must learn from?', yes: 'incident' },
   { q: 'Does the reader need to approve or fund a direction before anyone designs it?', yes: 'onepager' },
   { q: 'Is the customer outcome the hard part, rather than the system?', yes: 'prfaq' },
+  { q: 'Will other people call or implement an interface exactly as you describe it?', yes: 'api' },
   { q: 'Does the change cross team boundaries or set a shared standard?', yes: 'rfc' },
   { q: 'Do several decisions share one diagnosis over the next year or two?', yes: 'strategy' },
   { q: 'Is a service about to change production risk and need sign-off?', yes: 'orr' },
+  { q: 'Is the direction already approved, and the reader needs exactly how to build it?', yes: 'techspec' },
 ];
 function openRouter(onPick) {
   const m = $('#import'); m.replaceChildren();
@@ -1782,7 +1868,7 @@ function openImport() {
   const box = el('div', { className: 'box' });
   box.append(el('h2', { textContent: 'Import a document' }));
   const tabs = el('div', { className: 'tabs' }); const tFile = el('button', { type: 'button', textContent: 'Markdown, text or Word file' }); const tConf = el('button', { type: 'button', textContent: 'Confluence page' }); tabs.append(tFile, tConf); box.append(tabs);
-  const pick = el('select'); for (const [id, t] of Object.entries(TEMPLATES)) pick.append(el('option', { value: id, textContent: t.name })); pick.value = state.templateId || 'design';
+  const pick = el('select'); fillTemplateSelect(pick, state.templateId || 'design');
   const lt = el('label', { textContent: 'Review it as a' }); lt.append(pick);
   const body = el('div'); const foot = el('div', { className: 'foot' }); const err = el('span', { className: 'err' });
   const cancel = el('button', { type: 'button', className: 'btn', textContent: 'Cancel' }); cancel.onclick = () => { m.hidden = true; };
@@ -1863,6 +1949,7 @@ $('#home').onclick = () => showView('library');
 $('#ws-crumb').onclick = () => showView('library');
 store.ws.info().then(i => { $('#ws-crumb').textContent = i.name; }).catch(() => {});
 store.style.get().then(t => { styleRules = t || ''; }).catch(() => {});
+loadCustomTemplates();
 store.feedback.get().then(t => { feedbackText = t || ''; }).catch(() => {});
 
 /* ---------- images and diagrams ---------- */
@@ -2013,7 +2100,7 @@ const toMarkdown = () => `# ${state.title || 'Untitled ' + tpl().name}\n\n${doc.
 
 /* ---------- wiring ---------- */
 const sel = $('#template');
-for (const [id, t] of Object.entries(TEMPLATES)) sel.append(el('option', { value: id, textContent: t.name }));
+fillTemplateSelect(sel, 'design');
 sel.onchange = () => {
   state.templateId = sel.value;
   // An empty document takes the new template's sections; written text is never thrown away.
