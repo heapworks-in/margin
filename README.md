@@ -73,7 +73,7 @@ Images and diagrams are saved under the document's `assets/` folder and referenc
 ## Settings (⚙ in the header)
 
 - **Default data folder**: which workspace the app opens with.
-- **Coach agent**: Claude Code (bundled, uses your Claude login), or an agent Margin finds on your PATH at startup:
+- **Coach agent**: Claude Code (bundled, uses your Claude login), a **local model** through Ollama / LM Studio / llama.cpp / vLLM (OpenAI chat API; no tokens, nothing leaves the machine), or an agent Margin finds on your PATH at startup:
   Devin (`devin acp`), your own Claude Code ACP install (`claude-code-acp`), Codex (`codex-acp`), Gemini CLI
   (`gemini --acp`), Goose (`goose acp`). Nothing to configure: pick one. Anything else goes in as a custom command.
 - **Model** (`claude-opus-5-5` by default), **effort** (low … max), **skills** to preload (Claude Code skill names),

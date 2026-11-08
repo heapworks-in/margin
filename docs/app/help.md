@@ -9,6 +9,7 @@ This page walks through one document from blank page to "ship it". Read it once;
 - Install: `brew tap heapworks-in/tap && brew install --cask margin`, or download the DMG from the releases page. The build is not signed yet, so the first time right-click **Margin.app** and choose **Open**.
 - The bundled coach is Claude Code. It needs Node.js and a Claude login: run `claude` in a terminal once and `/login`. No API key.
 - To use another agent (Devin, Codex, Gemini CLI, Goose), open **Settings** (the gear, top right). Everything Margin finds on your PATH is listed with where it found it; pick one. There is nothing to configure unless you want a custom command.
+- **No tokens at all: a local model.** Pick **Local model** in Settings. Margin talks to Ollama (or LM Studio, llama.cpp, vLLM; anything with the OpenAI chat API) on your machine, lists the models it has loaded, and nothing leaves the Mac. Use a model of about 20B parameters or more (`ollama pull gemma4:26b`, `qwen3-coder:30b`, `gpt-oss:20b`); smaller ones follow the coach's format poorly. Reviews take longer than with a hosted model, and quotes are still verified, so a weak model gives you fewer notes, not wrong ones.
 - Your documents live in a **workspace** folder (`~/Documents/Margin` by default): `documents/` (one folder per document, with a Markdown copy you can read anywhere), `diagrams/`, `files/` (context shared by every document), plus `style.md` and `feedback.md`.
 
 ## 2. Start a document

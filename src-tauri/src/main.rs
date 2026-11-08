@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod acp;
+mod local;
 mod prompt;
 
 use std::path::{Path, PathBuf};
@@ -74,6 +75,13 @@ async fn agent_models(app: AppHandle, agent_id: Option<String>) -> Result<serde_
             cfg["settings"]["agent"] = serde_json::json!(id);
             write_config(&app, &cfg)?;
         }
+        let s = settings(&app);
+        if s["agent"].as_str() == Some("local") {
+            let base = s["localUrl"].as_str().unwrap_or("http://localhost:11434");
+            let list = local::models(base)?;
+            let current = list.iter().find(|m| !m.contains("cloud")).cloned().unwrap_or_default();
+            return Ok(serde_json::json!({ "models": list.iter().map(|m| serde_json::json!({"id": m, "name": m})).collect::<Vec<_>>(), "current": current }));
+        }
         let (models, current) = agent(&app)?.models()?;
         Ok(serde_json::json!({ "models": models.iter().map(|(id, name)| serde_json::json!({"id": id, "name": name})).collect::<Vec<_>>(), "current": current }))
     }).await.map_err(|e| e.to_string())?
@@ -93,6 +101,9 @@ fn agents_list() -> Vec<serde_json::Value> {
         list.push(serde_json::json!({ "id": id, "name": name, "found": path.is_some(),
             "path": path.map(|p| format!("{} {}", p.display(), args.join(" ")).trim().to_string()).unwrap_or_else(|| format!("`{bin}` is not on your PATH")) }));
     }
+    let local_up = local::models("http://localhost:11434").map(|m| m.len()).ok();
+    list.push(serde_json::json!({ "id": "local", "name": "Local model (Ollama, LM Studio, llama.cpp…)", "found": true,
+        "path": match local_up { Some(n) => format!("Ollama is running at localhost:11434 with {n} model{}; no tokens used", if n == 1 { "" } else { "s" }), None => "nothing answering at localhost:11434 yet; start Ollama or set the server URL below".to_string() } }));
     list.push(serde_json::json!({ "id": "custom", "name": "Custom ACP agent command", "path": "", "found": true }));
     list
 }
@@ -103,7 +114,7 @@ fn settings(app: &AppHandle) -> serde_json::Value {
     let mut s = cfg["settings"].clone();
     if !s.is_object() { s = serde_json::json!({}); }
     let defaults = serde_json::json!({
-        "agent": "claude", "command": "", "args": "",
+        "agent": "claude", "command": "", "args": "", "localUrl": "http://localhost:11434",
         "model": "claude-opus-5-5", "effort": "medium", "skills": [], "useMySettings": false
     });
     for (k, v) in defaults.as_object().unwrap() { if s.get(k).is_none() { s[k] = v.clone(); } }
@@ -172,9 +183,17 @@ async fn ask(app: AppHandle, body: serde_json::Value, on_chunk: Channel<String>)
     let images = prompt::images(&body);
     tauri::async_runtime::spawn_blocking(move || {
         let run = run_config(&app);
-        let stop = agent(&app)?.ask(prompt::SYSTEM, &prompt, &images, &run, |t| {
-            let _ = on_chunk.send(t.to_string());
-        });
+        let s = settings(&app);
+        let stop = if s["agent"].as_str() == Some("local") {
+            let base = s["localUrl"].as_str().unwrap_or("http://localhost:11434");
+            let model = s["model"].as_str().unwrap_or("").trim().to_string();
+            let available = local::models(base)?;
+            let model = if available.iter().any(|m| *m == model) { model } else { available.into_iter().find(|m| !m.contains("cloud")).ok_or("No model is loaded on the local server. Pull one (for example `ollama pull gemma4:26b`) and pick it in Settings.")? };
+            // Local models get the instructions in the prompt, like any non-Claude coach, and a system message too.
+            local::ask(base, &model, prompt::SYSTEM, &prompt, &images, |t| { let _ = on_chunk.send(t.to_string()); })
+        } else {
+            agent(&app)?.ask(prompt::SYSTEM, &prompt, &images, &run, |t| { let _ = on_chunk.send(t.to_string()); })
+        };
         let note = match stop {
             Ok(Some(r)) if r == "refusal" => "\n\nThe coach could not answer this one. Try asking in a different way.",
             Ok(Some(r)) if r == "max_tokens" => "\n\n(The answer was cut off because it was too long. Ask the coach to continue.)",

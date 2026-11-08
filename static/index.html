@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Margin</title>
 <link href="vendor/fonts/fonts.css" rel="stylesheet">
-<script src="vendor/editor.js?v=49"></script>
+<script src="vendor/editor.js?v=52"></script>
 <style>
 :root{
   color-scheme:dark;
@@ -774,7 +774,7 @@ const store = inApp ? {
   history: { _k: id => 'docu-coach-history:' + id, snapshot: async function (id, markdown, label) { const l = JSON.parse(localStorage.getItem(this._k(id)) || '[]'); const name = `${Date.now()}-${label}.md`; l.unshift({ name, markdown, updated: Date.now(), size: markdown.length }); localStorage.setItem(this._k(id), JSON.stringify(l.slice(0, 20))); return name; }, list: async function (id) { return JSON.parse(localStorage.getItem(this._k(id)) || '[]').map(({ name, updated, size }) => ({ name, updated, size })); }, read: async function (id, name) { return (JSON.parse(localStorage.getItem(this._k(id)) || '[]').find(h => h.name === name) || {}).markdown || ''; } },
   publish: async () => { throw new Error('Publishing works in the app.'); },
   models: async () => ({ models: MODELS.map(id => ({ id, name: id })), current: 'claude-opus-5-5' }),
-  agents: async () => [{ id: 'claude', name: 'Claude Code (bundled)', path: 'bundled with Margin; uses your Claude login', found: true }, { id: 'devin', name: 'Devin', path: '`devin` is not on your PATH', found: false }, { id: 'custom', name: 'Custom ACP agent command', path: '', found: true }],
+  agents: async () => [{ id: 'claude', name: 'Claude Code (bundled)', path: 'bundled with Margin; uses your Claude login', found: true }, { id: 'devin', name: 'Devin', path: '`devin` is not on your PATH', found: false }, { id: 'local', name: 'Local model (Ollama, LM Studio, llama.cpp\u2026)', path: 'Ollama is running at localhost:11434 with 2 models; no tokens used', found: true }, { id: 'custom', name: 'Custom ACP agent command', path: '', found: true }],
   settings: { get: async () => ({ agent: 'claude', command: '', args: '', model: 'claude-opus-5-5', effort: 'medium', skills: [], useMySettings: false, ...JSON.parse(localStorage.getItem('docu-coach-settings') || '{}') }), set: async function (v) { const cur = await this.get(); const next = { ...cur, ...v }; localStorage.setItem('docu-coach-settings', JSON.stringify(next)); return next; } },
   confluence: async () => { throw new Error('Confluence import works in the app.'); },
 };
@@ -1131,7 +1131,7 @@ function md(t) {
 }
 const kindOf = a => KIND_LABEL[a.type] && a.type !== 'draft' ? a.type : 'structure';
 // Text the thread shows: the reply minus its tags (they become comments).
-const prose = text => text.replace(TAG, '').replace(/<(check|score|claim|diagram)\b[^>]*>[\s\S]*?<\/\1>/g, '').replace(/<reader\b[^>]*decision="(\w+)"[^>]*>([\s\S]*?)<\/reader>/g, (m, d, why) => `**Your reader ${{ yes: 'says yes', ask: 'would ask first', no: 'says no' }[d.toLowerCase()] || 'decides'}.** ${why.trim()}`).replace(/<grade\b[^>]*value="(\d)"[^>]*>([\s\S]*?)<\/grade>/g, (m, v, why) => `**Answer graded ${v}/5.** ${why.trim()}`).replace(/<verdict>[\s\S]*?<\/verdict>/g, '').replace(/<(note|draft|check|score|verdict|claim|grade|diagram)\b[\s\S]*$/, '').replace(/\n{3,}/g, '\n\n').trim();
+const prose = text => text.replace(/<(check|score|claim|note|reader)\b([^>]*?)\s*\/>/g, '<$1$2></$1>').replace(TAG, '').replace(/<(check|score|claim|diagram)\b[^>]*>[\s\S]*?<\/\1>/g, '').replace(/<reader\b[^>]*decision="(\w+)"[^>]*>([\s\S]*?)<\/reader>/g, (m, d, why) => `**Your reader ${{ yes: 'says yes', ask: 'would ask first', no: 'says no' }[d.toLowerCase()] || 'decides'}.** ${why.trim()}`).replace(/<grade\b[^>]*value="(\d)"[^>]*>([\s\S]*?)<\/grade>/g, (m, v, why) => `**Answer graded ${v}/5.** ${why.trim()}`).replace(/<verdict>[\s\S]*?<\/verdict>/g, '').replace(/<(note|draft|check|score|verdict|claim|grade|diagram)\b[\s\S]*$/, '').replace(/\n{3,}/g, '\n\n').trim();
 function typing(label) {
   return el('div', { className: 'pending', innerHTML: `<span class="typing"><i></i><i></i><i></i></span>${esc(label)}` });
 }
@@ -1147,6 +1147,8 @@ const CLAIM = /<claim\b([^>]*)>([\s\S]*?)<\/claim>/g;
 const GRADE = /<grade\b([^>]*)>([\s\S]*?)<\/grade>/g;
 const DIAGRAM = /<diagram\b([^>]*)>([\s\S]*?)<\/diagram>/g;
 function ingest(reply, section) {
+  // Some models close tags as <check … />; give them a body so every parser below sees one shape.
+  reply = reply.replace(/<(check|score|claim|note|reader)\b([^>]*?)\s*\/>/g, '<$1$2></$1>');
   let n = 0;
   for (const m of reply.matchAll(CLAIM)) {
     const a = attrs(m[1]), quote = a.quote || '', source = (a.source || 'unsupported').trim();
@@ -1732,15 +1734,18 @@ async function renderSettings() {
     list.append(again);
   };
   fillAgents(false);
+  const localUrl = el('input', { type: 'text', value: cfg.localUrl || 'http://localhost:11434', placeholder: 'http://localhost:11434' });
+  const ll = el('label', { textContent: 'Server URL (Ollama: http://localhost:11434 \u00b7 LM Studio: http://localhost:1234 \u00b7 llama.cpp: http://localhost:8080)' }); ll.append(localUrl);
+  const localBox = el('div', { style: 'display:flex;flex-direction:column;gap:12px' }); localBox.append(ll, el('p', { className: 'note', textContent: 'The coach prompt is demanding: exact quotes, structured notes, a rubric. Models of about 20B parameters and up (gemma4:26b, qwen3-coder:30b, gpt-oss:20b) follow it well; small ones will miss notes. Quotes are still verified against your text, so a weak model costs you notes, never invented ones. Pick the model below once the list loads.' }));
+  localUrl.onchange = () => { store.settings.set({ localUrl: localUrl.value.trim() }).then(() => reloadModels()); };
   const cmd = el('input', { type: 'text', value: cfg.command || '', placeholder: '/usr/local/bin/some-acp-agent' });
   const args = el('input', { type: 'text', value: cfg.args || '', placeholder: 'extra arguments, separated by spaces' });
   const cl = el('label', { textContent: 'Command' }); cl.append(cmd); const argl = el('label', { textContent: 'Arguments' }); argl.append(args);
   const custom = el('div', { style: 'display:flex;flex-direction:column;gap:12px' }); custom.append(cl, argl, el('p', { className: 'note', textContent: 'Examples: npx -y @agentclientprotocol/codex-acp (command: npx, arguments: -y @agentclientprotocol/codex-acp). The agent must speak ACP over stdio.' }));
   let reloadModels = () => {};
-  const syncAgent = () => { custom.style.display = agent.value === 'custom' ? 'flex' : 'none'; reloadModels(); }; syncAgent();
+  const syncAgent = () => { custom.style.display = agent.value === 'custom' ? 'flex' : 'none'; localBox.style.display = agent.value === 'local' ? 'flex' : 'none'; reloadModels(); }; syncAgent();
   const al = list;
-  a.append(al, custom);
-  box.append(a);
+  a.append(al, localBox, custom); box.append(a);
 
   // Model, effort, skills
   const m = el('section', { className: 'set-sec' });
@@ -1754,6 +1759,7 @@ async function renderSettings() {
     try {
       const r = await store.models(agent.value === 'custom' ? '' : agent.value);
       for (const x of r.models) dl.append(el('option', { value: x.id, textContent: x.name !== x.id ? x.name : '' }));
+      if (r.models.length && !r.models.some(x => x.id === model.value.trim())) model.value = r.current || r.models[0].id;
       mstat.textContent = r.models.length ? `${r.models.length} models from this agent${r.current ? ` \u00b7 its default is ${r.current}` : ''}. Empty uses the default.` : 'This agent did not list its models; type a model id it accepts, or leave empty for its default.';
     } catch (e) { for (const x of MODELS) dl.append(el('option', { value: x })); mstat.textContent = 'Could not ask the agent (' + String(e).slice(0, 120) + '). Showing Claude models.'; }
   };
@@ -1799,7 +1805,7 @@ async function renderSettings() {
   saveBtn.onclick = async () => {
     msg.textContent = ''; err.textContent = '';
     try {
-      await store.settings.set({ agent: agent.value, command: cmd.value.trim(), args: args.value.trim(), model: model.value.trim(), effort: effort.value, skills: skills.value.split(',').map(x => x.trim()).filter(Boolean), useMySettings: mine.checked });
+      await store.settings.set({ agent: agent.value, command: cmd.value.trim(), args: args.value.trim(), localUrl: localUrl.value.trim(), model: model.value.trim(), effort: effort.value, skills: skills.value.split(',').map(x => x.trim()).filter(Boolean), useMySettings: mine.checked });
       await store.style.set(styleBox.value); styleRules = styleBox.value;
       await store.feedback.set(fbBox.value); feedbackText = fbBox.value;
       msg.textContent = 'Saved. The next coach request uses these settings.';
@@ -2253,7 +2259,7 @@ const DEMO_THESIS = `**Bottom line:** A per-client token bucket in Redis stops a
 Shall I interview you for the Failure modes section next?`;
 async function demo(scene) {
   document.documentElement.dataset.demo = scene;
-  store.agents = async () => [{ id: 'claude', name: 'Claude Code (bundled)', path: 'bundled with Margin; uses your Claude login', found: true }, { id: 'devin', name: 'Devin', path: '/Users/you/.local/bin/devin acp', found: true }, { id: 'claude-code-acp', name: 'Claude Code (your own install)', path: '`claude-code-acp` is not on your PATH', found: false }, { id: 'codex', name: 'Codex', path: '/opt/homebrew/bin/codex-acp', found: true }, { id: 'gemini', name: 'Gemini CLI', path: '`gemini` is not on your PATH', found: false }, { id: 'goose', name: 'Goose', path: '`goose` is not on your PATH', found: false }, { id: 'custom', name: 'Custom ACP agent command', path: '', found: true }];
+  store.agents = async () => [{ id: 'claude', name: 'Claude Code (bundled)', path: 'bundled with Margin; uses your Claude login', found: true }, { id: 'devin', name: 'Devin', path: '/Users/you/.local/bin/devin acp', found: true }, { id: 'local', name: 'Local model (Ollama, LM Studio, llama.cpp\u2026)', path: 'Ollama is running at localhost:11434 with 2 models; no tokens used', found: true }, { id: 'claude-code-acp', name: 'Claude Code (your own install)', path: '`claude-code-acp` is not on your PATH', found: false }, { id: 'codex', name: 'Codex', path: '/opt/homebrew/bin/codex-acp', found: true }, { id: 'gemini', name: 'Gemini CLI', path: '`gemini` is not on your PATH', found: false }, { id: 'goose', name: 'Goose', path: '`goose` is not on your PATH', found: false }, { id: 'custom', name: 'Custom ACP agent command', path: '', found: true }];
   localStorage.setItem('docu-coach-ws-name', 'Platform workspace');
   for (const [t, tpl] of [['Postmortem: month-end outage', 'incident'], ['ADR: Postgres over DynamoDB for the ledger', 'adr']]) { const id = await store.create(t); await store.save(id, { ...blank(), id, title: t, templateId: tpl, meta: { words: 340, sections: 4, ready: 2, open: 1, updated: Date.now() - 36e5 * (tpl === 'adr' ? 30 : 6) } }, `# ${t}\n`); }
   await createDoc('Rate limiter for the Payments API', 'design');
