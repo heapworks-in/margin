@@ -23,15 +23,40 @@ pub fn models(base: &str) -> Result<Vec<String>, String> {
     Ok(v["data"].as_array().map(|a| a.iter().filter_map(|m| m["id"].as_str().map(String::from)).collect()).unwrap_or_default())
 }
 
-/// Ollama only: load the model now and keep it in memory for an hour, so the next review starts at once
-/// and the server reuses the already-processed system prompt. Other servers answer 404 and are ignored.
-pub fn keep_loaded(base: &str, model: &str) {
-    let host = trim_base(base).trim_end_matches("/v1").to_string();
-    let _ = client(180).and_then(|c| c.post(format!("{host}/api/generate")).json(&json!({"model": model, "keep_alive": "1h"})).send().map_err(|e| e.to_string()));
+fn host(base: &str) -> String { trim_base(base).trim_end_matches("/v1").to_string() }
+
+/// Is this Ollama? Its native API gives us `think: false` (no silent reasoning phase) and `keep_alive`.
+pub fn is_ollama(base: &str) -> bool {
+    client(3).ok().and_then(|c| c.get(format!("{}/api/version", host(base))).send().ok()).map(|r| r.status().is_success()).unwrap_or(false)
+}
+
+/// Ollama's own chat API, streamed as NDJSON. Thinking off, the model kept loaded for an hour.
+fn ask_ollama(base: &str, model: &str, system: &str, prompt: &str, images: &[(String, String)], on_text: &mut impl FnMut(&str)) -> Result<Option<String>, String> {
+    let url = format!("{}/api/chat", host(base));
+    let mut user = json!({"role": "user", "content": prompt});
+    if !images.is_empty() { user["images"] = json!(images.iter().map(|(_, d)| d.clone()).collect::<Vec<_>>()); }
+    let body = json!({ "model": model, "stream": true, "think": false, "keep_alive": "1h",
+        "messages": [{"role": "system", "content": system}, user] });
+    let res = client(900)?.post(&url).json(&body).send().map_err(|e| format!("could not reach Ollama at {url} ({e})"))?;
+    if !res.status().is_success() {
+        let status = res.status();
+        let text = res.text().unwrap_or_default();
+        return Err(format!("Ollama answered {status}: {}", text.chars().take(300).collect::<String>()));
+    }
+    let mut finish = None;
+    for line in BufReader::new(res).lines() {
+        let line = line.map_err(|e| e.to_string())?;
+        let Ok(v) = serde_json::from_str::<Value>(line.trim()) else { continue };
+        if let Some(e) = v["error"].as_str() { return Err(format!("Ollama: {e}")); }
+        if let Some(t) = v["message"]["content"].as_str() { if !t.is_empty() { on_text(t); } }
+        if v["done"].as_bool() == Some(true) { finish = v["done_reason"].as_str().map(|r| if r == "length" { "max_tokens".into() } else { r.to_string() }); break; }
+    }
+    Ok(finish)
 }
 
 /// One coach turn, streamed. Returns the finish reason when the server gives one.
 pub fn ask(base: &str, model: &str, system: &str, prompt: &str, images: &[(String, String)], mut on_text: impl FnMut(&str)) -> Result<Option<String>, String> {
+    if is_ollama(base) { return ask_ollama(base, model, system, prompt, images, &mut on_text); }
     let url = format!("{}/chat/completions", trim_base(base));
     let mut content = vec![json!({"type": "text", "text": prompt})];
     for (mime, data) in images {
@@ -43,8 +68,7 @@ pub fn ask(base: &str, model: &str, system: &str, prompt: &str, images: &[(Strin
         "stream": true,
         "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
     });
-    keep_loaded(base, model);
-    let res = client(600)?.post(&url).json(&body).send().map_err(|e| format!("could not reach the local model at {url} ({e})"))?;
+    let res = client(900)?.post(&url).json(&body).send().map_err(|e| format!("could not reach the local model at {url} ({e})"))?;
     if !res.status().is_success() {
         let status = res.status();
         let text = res.text().unwrap_or_default();
