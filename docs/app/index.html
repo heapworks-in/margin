@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Margin</title>
 <link href="vendor/fonts/fonts.css" rel="stylesheet">
-<script src="vendor/editor.js?v=52"></script>
+<script src="vendor/editor.js?v=53"></script>
 <style>
 :root{
   color-scheme:dark;
@@ -1754,14 +1754,17 @@ async function renderSettings() {
   const dl = el('datalist', { id: 'models' });
   const mstat = el('small', { className: 'note', style: 'display:block;margin-top:4px', textContent: 'Asking the agent which models it offers\u2026' });
   const ml = el('label', { textContent: 'Model' }); ml.append(model, dl, mstat);
+  let modelsReq = 0;
   const loadModels = async () => {
+    const req = ++modelsReq, forAgent = agent.value;
     dl.replaceChildren(); mstat.textContent = 'Asking the agent which models it offers\u2026';
     try {
-      const r = await store.models(agent.value === 'custom' ? '' : agent.value);
+      const r = await store.models(forAgent === 'custom' ? '' : forAgent);
+      if (req !== modelsReq) return; // a newer choice has been made; this answer is for the old one
       for (const x of r.models) dl.append(el('option', { value: x.id, textContent: x.name !== x.id ? x.name : '' }));
       if (r.models.length && !r.models.some(x => x.id === model.value.trim())) model.value = r.current || r.models[0].id;
       mstat.textContent = r.models.length ? `${r.models.length} models from this agent${r.current ? ` \u00b7 its default is ${r.current}` : ''}. Empty uses the default.` : 'This agent did not list its models; type a model id it accepts, or leave empty for its default.';
-    } catch (e) { for (const x of MODELS) dl.append(el('option', { value: x })); mstat.textContent = 'Could not ask the agent (' + String(e).slice(0, 120) + '). Showing Claude models.'; }
+    } catch (e) { if (req !== modelsReq) return; for (const x of MODELS) dl.append(el('option', { value: x })); mstat.textContent = 'Could not ask the agent (' + String(e).slice(0, 120) + '). Showing Claude models.'; }
   };
   reloadModels = loadModels; loadModels();
   const effort = el('select'); for (const x of ['low', 'medium', 'high', 'xhigh', 'max']) effort.append(el('option', { value: x, textContent: x })); effort.value = cfg.effort || 'medium';

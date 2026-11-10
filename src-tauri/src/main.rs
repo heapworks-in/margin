@@ -69,20 +69,16 @@ const KNOWN_AGENTS: &[(&str, &str, &str, &[&str])] = &[
 #[tauri::command]
 async fn agent_models(app: AppHandle, agent_id: Option<String>) -> Result<serde_json::Value, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        if let Some(id) = agent_id.filter(|id| !id.is_empty()) {
-            let mut cfg = read_config(&app);
-            if !cfg["settings"].is_object() { cfg["settings"] = serde_json::json!({}); }
-            cfg["settings"]["agent"] = serde_json::json!(id);
-            write_config(&app, &cfg)?;
-        }
-        let s = settings(&app);
+        // The list for the agent the page is looking at, without changing what is saved.
+        let mut s = settings(&app);
+        if let Some(id) = agent_id.filter(|id| !id.is_empty()) { s["agent"] = serde_json::json!(id); }
         if s["agent"].as_str() == Some("local") {
             let base = s["localUrl"].as_str().unwrap_or("http://localhost:11434");
             let list = local::models(base)?;
             let current = list.iter().find(|m| !m.contains("cloud")).cloned().unwrap_or_default();
             return Ok(serde_json::json!({ "models": list.iter().map(|m| serde_json::json!({"id": m, "name": m})).collect::<Vec<_>>(), "current": current }));
         }
-        let (models, current) = agent(&app)?.models()?;
+        let (models, current) = agent_for(&app, &s)?.models()?;
         Ok(serde_json::json!({ "models": models.iter().map(|(id, name)| serde_json::json!({"id": id, "name": name})).collect::<Vec<_>>(), "current": current }))
     }).await.map_err(|e| e.to_string())?
 }
@@ -142,8 +138,8 @@ fn run_config(app: &AppHandle) -> acp::RunConfig {
     }
 }
 /// The agent command: the bundled Claude Code adapter, a discovered agent, or the custom command from Settings.
-fn agent_command(app: &AppHandle) -> Result<(PathBuf, Vec<String>), String> {
-    let s = settings(app);
+fn agent_command(app: &AppHandle) -> Result<(PathBuf, Vec<String>), String> { agent_command_for(app, &settings(app)) }
+fn agent_command_for(app: &AppHandle, s: &serde_json::Value) -> Result<(PathBuf, Vec<String>), String> {
     let id = s["agent"].as_str().unwrap_or("claude");
     if let Some((_, name, bin, args)) = KNOWN_AGENTS.iter().find(|a| a.0 == id) {
         let path = which(bin).ok_or_else(|| format!("{name} was not found: `{bin}` is not on your PATH. Install it, or choose another coach in Settings."))?;
@@ -160,10 +156,11 @@ fn agent_command(app: &AppHandle) -> Result<(PathBuf, Vec<String>), String> {
     Ok((find_node(), vec![script.to_string_lossy().to_string()]))
 }
 
-fn agent(app: &AppHandle) -> Result<Arc<acp::Acp>, String> {
+fn agent(app: &AppHandle) -> Result<Arc<acp::Acp>, String> { agent_for(app, &settings(app)) }
+fn agent_for(app: &AppHandle, s: &serde_json::Value) -> Result<Arc<acp::Acp>, String> {
     let state = app.state::<Coach>();
     let mut slot = state.0.lock().unwrap();
-    let (program, args) = agent_command(app)?;
+    let (program, args) = agent_command_for(app, s)?;
     let key = format!("{}|{}", program.display(), args.join(" "));
     if let Some((a, _)) = slot.as_ref().filter(|(a, k)| a.alive() && *k == key) {
         return Ok(a.clone());
