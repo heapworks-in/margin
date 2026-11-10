@@ -23,6 +23,13 @@ pub fn models(base: &str) -> Result<Vec<String>, String> {
     Ok(v["data"].as_array().map(|a| a.iter().filter_map(|m| m["id"].as_str().map(String::from)).collect()).unwrap_or_default())
 }
 
+/// Ollama only: load the model now and keep it in memory for an hour, so the next review starts at once
+/// and the server reuses the already-processed system prompt. Other servers answer 404 and are ignored.
+pub fn keep_loaded(base: &str, model: &str) {
+    let host = trim_base(base).trim_end_matches("/v1").to_string();
+    let _ = client(180).and_then(|c| c.post(format!("{host}/api/generate")).json(&json!({"model": model, "keep_alive": "1h"})).send().map_err(|e| e.to_string()));
+}
+
 /// One coach turn, streamed. Returns the finish reason when the server gives one.
 pub fn ask(base: &str, model: &str, system: &str, prompt: &str, images: &[(String, String)], mut on_text: impl FnMut(&str)) -> Result<Option<String>, String> {
     let url = format!("{}/chat/completions", trim_base(base));
@@ -36,6 +43,7 @@ pub fn ask(base: &str, model: &str, system: &str, prompt: &str, images: &[(Strin
         "stream": true,
         "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
     });
+    keep_loaded(base, model);
     let res = client(600)?.post(&url).json(&body).send().map_err(|e| format!("could not reach the local model at {url} ({e})"))?;
     if !res.status().is_success() {
         let status = res.status();
@@ -75,7 +83,7 @@ mod tests {
         });
         let started = std::time::Instant::now();
         let mut reply = String::new();
-        super::ask(base, &model, prompt::SYSTEM, &prompt::build(&body), &[], |t| reply.push_str(t)).unwrap();
+        super::ask(base, &model, prompt::SYSTEM_LOCAL, &prompt::build(&body), &[], |t| reply.push_str(t)).unwrap();
         println!("--- {model} in {:.0}s\n{reply}", started.elapsed().as_secs_f32());
         let squash = |s: &str| s.to_lowercase().replace(['\u{201c}', '\u{201d}', '"', '\'', '\u{2019}'], "").split_whitespace().collect::<Vec<_>>().join(" ");
         let hay = squash(text);

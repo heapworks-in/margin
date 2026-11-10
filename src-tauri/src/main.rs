@@ -187,7 +187,7 @@ async fn ask(app: AppHandle, body: serde_json::Value, on_chunk: Channel<String>)
             let available = local::models(base)?;
             let model = if available.iter().any(|m| *m == model) { model } else { available.into_iter().find(|m| !m.contains("cloud")).ok_or("No model is loaded on the local server. Pull one (for example `ollama pull gemma4:26b`) and pick it in Settings.")? };
             // Local models get the instructions in the prompt, like any non-Claude coach, and a system message too.
-            local::ask(base, &model, prompt::SYSTEM, &prompt, &images, |t| { let _ = on_chunk.send(t.to_string()); })
+            local::ask(base, &model, prompt::SYSTEM_LOCAL, &prompt, &images, |t| { let _ = on_chunk.send(t.to_string()); })
         } else {
             agent(&app)?.ask(prompt::SYSTEM, &prompt, &images, &run, |t| { let _ = on_chunk.send(t.to_string()); })
         };

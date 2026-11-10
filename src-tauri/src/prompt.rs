@@ -3,6 +3,8 @@
 use serde_json::Value;
 
 pub const SYSTEM: &str = concat!(include_str!("coach_prompt.md"), include_str!("../../static/guide.md"));
+/// For local models: the same coach, with the guide condensed (fewer tokens to chew through per review).
+pub const SYSTEM_LOCAL: &str = concat!(include_str!("coach_prompt.md"), include_str!("guide-short.md"));
 
 fn s(v: &Value) -> &str {
     v.as_str().unwrap_or("")
