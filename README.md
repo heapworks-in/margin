@@ -73,6 +73,7 @@ Images and diagrams are saved under the document's `assets/` folder and referenc
 ## Settings (⚙ in the header)
 
 - **Default data folder**: which workspace the app opens with.
+- **Quick and deep coach**: conversational turns can go to a fast or free coach (a local model, Haiku) while reviews, the panel, the reader and rehearsals stay on the main one; each turn sends only the section and history it needs.
 - **Coach agent**: Claude Code (bundled, uses your Claude login), a **local model** through Ollama / LM Studio / llama.cpp / vLLM (OpenAI chat API; no tokens, nothing leaves the machine), or an agent Margin finds on your PATH at startup:
   Devin (`devin acp`), your own Claude Code ACP install (`claude-code-acp`), Codex (`codex-acp`), Gemini CLI
   (`gemini --acp`), Goose (`goose acp`). Nothing to configure: pick one. Anything else goes in as a custom command.

@@ -110,7 +110,7 @@ fn settings(app: &AppHandle) -> serde_json::Value {
     let mut s = cfg["settings"].clone();
     if !s.is_object() { s = serde_json::json!({}); }
     let defaults = serde_json::json!({
-        "agent": "claude", "command": "", "args": "", "localUrl": "http://localhost:11434",
+        "agent": "claude", "command": "", "args": "", "localUrl": "http://localhost:11434", "quickAgent": "", "quickModel": "",
         "model": "claude-opus-5-5", "effort": "medium", "skills": [], "useMySettings": false
     });
     for (k, v) in defaults.as_object().unwrap() { if s.get(k).is_none() { s[k] = v.clone(); } }
@@ -127,8 +127,20 @@ fn settings_set(app: AppHandle, value: serde_json::Value) -> Result<serde_json::
     write_config(&app, &cfg)?;
     Ok(settings(&app))
 }
-fn run_config(app: &AppHandle) -> acp::RunConfig {
-    let s = settings(app);
+/// Settings for a tier: "deep" is the main coach; "quick" may be another agent and model for conversational turns.
+fn settings_for(app: &AppHandle, tier: &str) -> serde_json::Value {
+    let mut s = settings(app);
+    if tier == "quick" {
+        let qa = s["quickAgent"].as_str().unwrap_or("").trim().to_string();
+        let qm = s["quickModel"].as_str().unwrap_or("").trim().to_string();
+        if !qa.is_empty() { s["agent"] = serde_json::json!(qa); s["model"] = serde_json::json!(qm); }
+        else if !qm.is_empty() { s["model"] = serde_json::json!(qm); }
+        if matches!(s["agent"].as_str(), Some("claude") | Some("claude-code-acp")) { s["effort"] = serde_json::json!("low"); }
+    }
+    s
+}
+fn run_config(app: &AppHandle) -> acp::RunConfig { run_config_from(&settings(app)) }
+fn run_config_from(s: &serde_json::Value) -> acp::RunConfig {
     acp::RunConfig {
         claude: matches!(s["agent"].as_str(), Some("claude") | Some("claude-code-acp") | None),
         model: s["model"].as_str().unwrap_or("").trim().to_string(),
@@ -178,18 +190,22 @@ fn agent_for(app: &AppHandle, s: &serde_json::Value) -> Result<Arc<acp::Acp>, St
 async fn ask(app: AppHandle, body: serde_json::Value, on_chunk: Channel<String>) -> Result<(), String> {
     let prompt = prompt::build(&body);
     let images = prompt::images(&body);
+    let tier = body["tier"].as_str().unwrap_or("deep").to_string();
+    let mode = body["mode"].as_str().unwrap_or("review").to_string();
+    let scope = body["scope"].as_str().unwrap_or("document").to_string();
     tauri::async_runtime::spawn_blocking(move || {
-        let run = run_config(&app);
-        let s = settings(&app);
-        let stop = if s["agent"].as_str() == Some("local") {
+        let s = settings_for(&app, &tier);
+        let run = run_config_from(&s);
+        let is_local = s["agent"].as_str() == Some("local");
+        let system = prompt::system_for(&mode, &scope, is_local);
+        let stop = if is_local {
             let base = s["localUrl"].as_str().unwrap_or("http://localhost:11434");
             let model = s["model"].as_str().unwrap_or("").trim().to_string();
             let available = local::models(base)?;
             let model = if available.iter().any(|m| *m == model) { model } else { available.into_iter().find(|m| !m.contains("cloud")).ok_or("No model is loaded on the local server. Pull one (for example `ollama pull gemma4:26b`) and pick it in Settings.")? };
-            // Local models get the instructions in the prompt, like any non-Claude coach, and a system message too.
-            local::ask(base, &model, prompt::SYSTEM_LOCAL, &prompt, &images, |t| { let _ = on_chunk.send(t.to_string()); })
+            local::ask(base, &model, &system, &prompt, &images, |t| { let _ = on_chunk.send(t.to_string()); })
         } else {
-            agent(&app)?.ask(prompt::SYSTEM, &prompt, &images, &run, |t| { let _ = on_chunk.send(t.to_string()); })
+            agent_for(&app, &s)?.ask(&system, &prompt, &images, &run, |t| { let _ = on_chunk.send(t.to_string()); })
         };
         let note = match stop {
             Ok(Some(r)) if r == "refusal" => "\n\nThe coach could not answer this one. Try asking in a different way.",
@@ -207,6 +223,23 @@ async fn ask(app: AppHandle, body: serde_json::Value, on_chunk: Channel<String>)
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// Pre-warm the local model(s) in use: load them and cache the shared prompt prefix. Fire-and-forget.
+#[tauri::command]
+async fn warm(app: AppHandle) {
+    let _ = tauri::async_runtime::spawn_blocking(move || {
+        for tier in ["quick", "deep"] {
+            let s = settings_for(&app, tier);
+            if s["agent"].as_str() != Some("local") { continue; }
+            let base = s["localUrl"].as_str().unwrap_or("http://localhost:11434").to_string();
+            let model = s["model"].as_str().unwrap_or("").trim().to_string();
+            let Ok(available) = local::models(&base) else { continue };
+            let model = if available.iter().any(|m| *m == model) { model } else { match available.into_iter().find(|m| !m.contains("cloud")) { Some(m) => m, None => continue } };
+            let mode = if tier == "quick" { "interview" } else { "review" };
+            local::warm(&base, &model, &prompt::system_for(mode, "section", true));
+        }
+    }).await;
 }
 
 /// Text of a PDF the writer attached as context (base64 bytes in, plain text out).
@@ -663,7 +696,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(Coach::default())
-        .invoke_handler(tauri::generate_handler![ask, save_markdown, extract_pdf, ws_info, ws_use, ws_forget, reveal, docs_list, doc_create, doc_load, doc_save, doc_delete, asset_save, diagrams_list, diagram_save, diagram_load, diagram_delete, files_list, file_add, file_read, file_delete, library_load, library_save, confluence_fetch, settings_get, settings_set, agents_discover, agent_models, read_files, style_get, style_set, templates_get, templates_set, feedback_get, feedback_set, doc_snapshot, history_list, history_read, confluence_publish])
+        .invoke_handler(tauri::generate_handler![ask, save_markdown, extract_pdf, ws_info, ws_use, ws_forget, reveal, docs_list, doc_create, doc_load, doc_save, doc_delete, asset_save, diagrams_list, diagram_save, diagram_load, diagram_delete, files_list, file_add, file_read, file_delete, library_load, library_save, confluence_fetch, settings_get, settings_set, agents_discover, agent_models, read_files, warm, style_get, style_set, templates_get, templates_set, feedback_get, feedback_set, doc_snapshot, history_list, history_read, confluence_publish])
         .run(tauri::generate_context!())
         .expect("error while running Margin");
 }

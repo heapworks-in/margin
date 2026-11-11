@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Margin</title>
 <link href="vendor/fonts/fonts.css" rel="stylesheet">
-<script src="vendor/editor.js?v=57"></script>
+<script src="vendor/editor.js?v=58"></script>
 <style>
 :root{
   color-scheme:dark;
@@ -780,14 +780,15 @@ const store = inApp ? {
   publish: async () => { throw new Error('Publishing works in the app.'); },
   models: async () => ({ models: MODELS.map(id => ({ id, name: id })), current: 'claude-opus-5-5' }),
   agents: async () => [{ id: 'claude', name: 'Claude Code (bundled)', path: 'bundled with Margin; uses your Claude login', found: true }, { id: 'devin', name: 'Devin', path: '`devin` is not on your PATH', found: false }, { id: 'local', name: 'Local model (Ollama, LM Studio, llama.cpp\u2026)', path: 'Ollama is running at localhost:11434 with 2 models; no tokens used', found: true }, { id: 'custom', name: 'Custom ACP agent command', path: '', found: true }],
-  settings: { get: async () => ({ agent: 'claude', command: '', args: '', model: 'claude-opus-5-5', effort: 'medium', skills: [], useMySettings: false, ...JSON.parse(localStorage.getItem('docu-coach-settings') || '{}') }), set: async function (v) { const cur = await this.get(); const next = { ...cur, ...v }; localStorage.setItem('docu-coach-settings', JSON.stringify(next)); return next; } },
+  settings: { get: async () => ({ agent: 'claude', command: '', args: '', quickAgent: '', quickModel: '', model: 'claude-opus-5-5', effort: 'medium', skills: [], useMySettings: false, ...JSON.parse(localStorage.getItem('docu-coach-settings') || '{}') }), set: async function (v) { const cur = await this.get(); const next = { ...cur, ...v }; localStorage.setItem('docu-coach-settings', JSON.stringify(next)); return next; } },
   confluence: async () => { throw new Error('Confluence import works in the app.'); },
 };
 
 const blank = () => ({ id: null, title: '', templateId: 'design', notes: '', docJson: null, current: null, mode: 'review', chat: [], comments: [], checks: {}, audience: '', purpose: '', brief: { ask: '', objection: '', deadline: '', numbers: '', nongoals: '' }, rubric: null, reader: null, claims: [], grades: [], reviewStats: [], publish: null, attachments: [], focus: false, threadOpen: false });
-let styleRules = '', feedbackText = '', coachLabel = '';
-const coachName = () => coachLabel;
-async function refreshCoachLabel() { try { const c = await store.settings.get(); coachLabel = c.agent === 'local' ? (c.model ? `local \u00b7 ${c.model}` : 'local model') : c.agent === 'claude' ? (c.model ? `Claude Code \u00b7 ${c.model}` : 'Claude Code') : c.agent === 'custom' ? 'custom agent' : (c.agent || '') + (c.model ? ` \u00b7 ${c.model}` : ''); } catch { coachLabel = ''; } }
+let styleRules = '', feedbackText = '', coachLabels = { quick: '', deep: '' };
+const coachName = tier => coachLabels[tier] || coachLabels.deep;
+const describeCoach = (agent, model) => agent === 'local' ? (model ? `local \u00b7 ${model}` : 'local model') : agent === 'claude' ? (model ? `Claude Code \u00b7 ${model}` : 'Claude Code') : agent === 'custom' ? 'custom agent' : (agent || '') + (model ? ` \u00b7 ${model}` : '');
+async function refreshCoachLabel() { try { const c = await store.settings.get(); coachLabels.deep = describeCoach(c.agent, c.model); coachLabels.quick = c.quickAgent ? describeCoach(c.quickAgent, c.quickModel) : c.quickModel ? describeCoach(c.agent, c.quickModel) : coachLabels.deep; } catch { coachLabels = { quick: '', deep: '' }; } }
 let savedTimer, saveTimer, saving = false, dirty = false;
 function meta() {
   const all = sections(), n = docWords();
@@ -1072,38 +1073,40 @@ const panelReviewPrompt = () => {
   return `Review the whole document as a panel of three independent reviewers: ${who.map(n => `${n} (${PERSONAS[n] || ''})`).join('; ')}. Give every note a persona attribute. Then score the rubric and give a verdict. Quote the exact words for every note.`;
 };
 const panelNames = () => (tpl().readers || ['Staff peer', 'Skeptical VP', 'Future maintainer']).slice(0, 3);
+// Each action: label, message, tier (quick = the fast coach, deep = the judging one), scope (what of the document to send).
 const ACTIONS = {
   interview: [
-    ['Interview me', s => `Interview me for the "${s}" section. Ask me one question at a time.`],
-    ['Thesis', () => 'Give me the thesis for this document: the bottom line in at most 25 words, the ask, three supporting claims with facts, the strongest counterargument, and what would change your mind. If you cannot without inventing facts, say THESIS BLOCKED and ask me the questions.'],
-    ['Options table', () => 'Build the options table with me: ask me for the alternatives (including doing nothing), the criteria the reader cares about, and how each option scores, one question at a time. Then write the table.'],
-    ['TL;DR', () => `Write the TL;DR for this document${state.comments.some(c => c.resolved) ? ', and say what changed since the last review' : ''}.`],
-    ['Reshape dictation', s => `Reshape dictation: the text in the "${s}" section was dictated and is rough. Turn it into clean prose in my meaning and order.`],
-    ['Sort my notes', () => 'Read my raw notes. Sort them into the template sections and write a draft for each section you have material for. Then tell me what is still missing.'],
+    ['Interview me', s => `Interview me for the "${s}" section. Ask me one question at a time.`, 'quick', 'section'],
+    ['Thesis', () => 'Give me the thesis for this document: the bottom line in at most 25 words, the ask, three supporting claims with facts, the strongest counterargument, and what would change your mind. If you cannot without inventing facts, say THESIS BLOCKED and ask me the questions.', 'quick', 'document'],
+    ['Options table', () => 'Build the options table with me: ask me for the alternatives (including doing nothing), the criteria the reader cares about, and how each option scores, one question at a time. Then write the table.', 'quick', 'document'],
+    ['TL;DR', () => `Write the TL;DR for this document${state.comments.some(c => c.resolved) ? ', and say what changed since the last review' : ''}.`, 'quick', 'document'],
+    ['Reshape dictation', s => `Reshape dictation: the text in the "${s}" section was dictated and is rough. Turn it into clean prose in my meaning and order.`, 'quick', 'section'],
+    ['Sort my notes', () => 'Read my raw notes. Sort them into the template sections and write a draft for each section you have material for. Then tell me what is still missing.', 'quick', 'document'],
   ],
   review: [
-    ['Review this section', s => `Review the "${s}" section.`],
-    ['30-second read', () => 'Do the 30-second read of this document: title, first paragraph and headings only. What do you believe it asks for, and does that match the brief?'],
-    ['Read as my reader', () => 'Read this document as my reader: the reader in the brief, with their job, their time and their objection. Tell me what happens in their head, where it happens, and what they decide.'],
-    ['Claims', s => `List the claims in the "${s}" section with their sources.`],
-    ['Fix English', s => `Only fix the English in the "${s}" section. Keep my meaning and my facts.`],
-    ['Lint', () => 'Lint the whole document against the style rules.'],
-    ['Check facts', s => `In the "${s}" section, list every claim or number a reviewer might doubt, as fact notes with the exact words quoted.`],
-    ['Learn from feedback', () => '__feedback__'],
+    ['Review this section', s => `Review the "${s}" section.`, 'deep', 'section'],
+    ['30-second read', () => 'Do the 30-second read of this document: title, first paragraph and headings only. What do you believe it asks for, and does that match the brief?', 'quick', 'document'],
+    ['Read as my reader', () => 'Read this document as my reader: the reader in the brief, with their job, their time and their objection. Tell me what happens in their head, where it happens, and what they decide.', 'deep', 'document'],
+    ['Claims', s => `List the claims in the "${s}" section with their sources.`, 'deep', 'section', true],
+    ['Fix English', s => `Only fix the English in the "${s}" section. Keep my meaning and my facts.`, 'quick', 'section'],
+    ['Lint', () => 'Lint the whole document against the style rules.', 'quick', 'document'],
+    ['Check facts', s => `In the "${s}" section, list every claim or number a reviewer might doubt, as fact notes with the exact words quoted.`, 'deep', 'section', true],
+    ['Learn from feedback', () => '__feedback__', 'deep', 'document'],
   ],
   rehearse: [
-    ['Start the meeting', () => `Rehearse the review meeting. You are the panel: ${panelNames().map(n => `${n} (${PERSONAS[n] || ''})`).join('; ')}. Ask your first question, the hardest one.`],
-    ['Next question', () => 'Next question.'],
-    ['How did it go?', () => 'Give the panel verdict on how this meeting would go, and the top three things to fix before I share the document.'],
+    ['Start the meeting', () => `Rehearse the review meeting. You are the panel: ${panelNames().map(n => `${n} (${PERSONAS[n] || ''})`).join('; ')}. Ask your first question, the hardest one.`, 'deep', 'document'],
+    ['Next question', () => 'Next question.', 'deep', 'document'],
+    ['How did it go?', () => 'Give the panel verdict on how this meeting would go, and the top three things to fix before I share the document.', 'deep', 'document'],
   ],
 };
 function renderCoachBar() {
   document.querySelectorAll('.modes button').forEach(b => b.setAttribute('aria-pressed', b.dataset.mode === state.mode));
   const a = $('#actions');
   a.innerHTML = '';
-  for (const [label, msg] of ACTIONS[state.mode]) {
+  for (const [label, msg, tier, scope, withFiles] of ACTIONS[state.mode]) {
     const b = el('button', { textContent: label, type: 'button', title: state.current });
-    b.onclick = () => { const m = msg(state.current); if (m === '__feedback__') return openFeedback(); send(m, { label: `${label} · ${state.current}` }); };
+    b.onclick = () => { const m = msg(state.current); if (m === '__feedback__') return openFeedback(); send(m, { label: `${label} · ${state.current}`, tier, scope, withFiles }); };
+    b.title = tier === 'quick' ? 'Quick coach' : 'Deep coach';
     a.append(b);
   }
 }
@@ -1469,13 +1472,22 @@ function refreshDoc(t) {
 }
 
 /* ---------- talking to the coach ---------- */
-function payload() {
+function payload(opts = {}) {
+  const tier = opts.tier || (state.mode === 'interview' ? 'quick' : 'deep');
+  const scope = opts.scope || 'document';
+  const chat = state.chat.slice(0, -1).filter(m => !m.ui && !m.hidden);
+  // Conversation goes back far enough to follow an interview; a review only needs the last exchange.
+  const history = chat.slice(state.mode === 'review' ? -2 : -10).map(({ role, content }) => ({ role, content: content.length > 6000 ? content.slice(0, 6000) + ' …' : content }));
+  const last = state.chat[state.chat.length - 1];
+  const named = state.attachments.some(a => a.name && last && last.content && last.content.toLowerCase().includes(a.name.toLowerCase().replace(/\.[^.]+$/, '')));
+  const sendFiles = !!opts.withFiles || named || tier === 'deep' && scope === 'document';
   return {
+    tier, scope,
     mode: state.mode, current: state.current, title: state.title, notes: state.notes, audience: state.audience || '', purpose: state.purpose || '', brief: state.brief || {}, style: styleRules || DEFAULT_STYLE,
-    attachments: state.attachments.map(a => a.kind === 'image' ? { name: a.name, kind: 'image', mime: a.mime, data: images[a.id] || '' } : { name: a.name, kind: a.kind, text: a.text || '' }).filter(a => a.kind !== 'image' || a.data),
+    attachments: sendFiles ? state.attachments.map(a => a.kind === 'image' ? { name: a.name, kind: 'image', mime: a.mime, data: images[a.id] || '' } : { name: a.name, kind: a.kind, text: a.text || '' }).filter(a => a.kind !== 'image' || a.data) : [],
     template: { name: tpl().name, sections: tpl().sections },
-    sections: sections().map(({ title, text }) => ({ title, text })),
-    history: state.chat.slice(0, -1).filter(m => !m.ui).map(({ role, content }) => ({ role, content })),
+    sections: sections().map(({ title, text }) => ({ title, text: scope === 'section' && title !== state.current ? '' : text })),
+    history: history.concat(last ? [{ role: last.role, content: last.content }] : []),
     feedback: feedbackText || '',
   };
 }
@@ -1485,7 +1497,7 @@ async function send(text, opts = {}) {
   setBusy(true);
   const section = state.current;
   state.chat.push({ role: 'user', content: text.trim(), hidden: !!opts.hidden, label: opts.label || '', at: Date.now() });
-  const m = { role: 'assistant', content: '', done: false, verify: !!opts.hidden, since: Date.now(), at: Date.now(), coach: coachName() };
+  const m = { role: 'assistant', content: '', done: false, verify: !!opts.hidden, since: Date.now(), at: Date.now(), coach: coachName(opts.tier || (state.mode === 'interview' ? 'quick' : 'deep')) };
   const seq = ++sendSeq;
   setThread(true);
   state.chat.push(m);
@@ -1497,7 +1509,7 @@ async function send(text, opts = {}) {
     const { invoke, Channel } = window.__TAURI__.core;
     const onChunk = new Channel();
     onChunk.onmessage = onText;
-    await invoke('ask', { body: payload(), onChunk });
+    await invoke('ask', { body: payload(opts), onChunk });
   } catch (e) {
     if (e !== null) m.content += `\n\n${e}`;
   }
@@ -1575,7 +1587,10 @@ async function openDoc(id) {
   if (!titles().includes(state.current) && !tpl().sections.some(x => x.title === state.current)) state.current = firstSection();
   renderAll();
   showView('doc');
+  warmCoach();
 }
+let warmedAt = 0;
+function warmCoach(force) { if (!inApp) return; if (!force && Date.now() - warmedAt < 10 * 60000) return; warmedAt = Date.now(); window.__TAURI__.core.invoke('warm').catch(() => {}); }
 async function createDoc(title, templateId) {
   if (state.id && dirty) await flush();
   const id = await store.create(title || 'Untitled');
@@ -1769,9 +1784,23 @@ async function renderSettings() {
   const al = list;
   a.append(al, localBox, custom); box.append(a);
 
+  // Quick coach: another agent/model for conversational turns
+  const q = el('section', { className: 'set-sec' });
+  q.append(el('h2', { textContent: 'Quick coach' }), el('p', { className: 'note', textContent: 'Conversational turns (interview, thesis, fix English, lint, 30-second read) can go to a faster or free coach, while the deep ones (Review this section, panel, reader, rehearsal, claims) stay on the coach above. A local model for quick and Claude for deep keeps most of a session free. Empty means: same as above.' }));
+  const qagent = el('select'); qagent.append(el('option', { value: '', textContent: 'Same as the coach above' }));
+  store.agents().then(list => { for (const ag of list) if (ag.found && ag.id !== 'custom') qagent.append(el('option', { value: ag.id, textContent: ag.name })); qagent.value = cfg.quickAgent || ''; }).catch(() => {});
+  const ql = el('label', { textContent: 'Agent' }); ql.append(qagent);
+  const qmodel = el('input', { type: 'text', value: cfg.quickModel || '', placeholder: 'the agent\u2019s default' }); qmodel.setAttribute('list', 'qmodels');
+  const qdl = el('datalist', { id: 'qmodels' }); const qstat = el('small', { className: 'note', style: 'display:block;margin-top:4px' });
+  const qml = el('label', { textContent: 'Model' }); qml.append(qmodel, qdl, qstat);
+  let qreq = 0;
+  const loadQuickModels = async () => { const r0 = ++qreq; qdl.replaceChildren(); qstat.textContent = 'Asking which models it offers\u2026'; try { const r = await store.models(qagent.value || agent.value); if (r0 !== qreq) return; for (const x of r.models) qdl.append(el('option', { value: x.id, textContent: x.name !== x.id ? x.name : '' })); qstat.textContent = r.models.length ? `${r.models.length} models${r.current ? ` \u00b7 default ${r.current}` : ''}. Empty uses the default.` : 'No list from this agent; type a model id or leave empty.'; } catch (e) { if (r0 === qreq) qstat.textContent = 'Could not ask (' + String(e).slice(0, 100) + ').'; } };
+  qagent.onchange = loadQuickModels; setTimeout(loadQuickModels, 300);
+  q.append(ql, qml); box.append(q);
+
   // Model, effort, skills
   const m = el('section', { className: 'set-sec' });
-  m.append(el('h2', { textContent: 'Model and skills' }));
+  m.append(el('h2', { textContent: 'Model and skills (the coach above)' }));
   const model = el('input', { type: 'text', value: cfg.model || '', placeholder: 'the agent\u2019s default' }); model.setAttribute('list', 'models');
   const dl = el('datalist', { id: 'models' });
   const mstat = el('small', { className: 'note', style: 'display:block;margin-top:4px', textContent: 'Asking the agent which models it offers\u2026' });
@@ -1830,8 +1859,8 @@ async function renderSettings() {
   saveBtn.onclick = async () => {
     msg.textContent = ''; err.textContent = '';
     try {
-      await store.settings.set({ agent: agent.value, command: cmd.value.trim(), args: args.value.trim(), localUrl: localUrl.value.trim(), model: model.value.trim(), effort: effort.value, skills: skills.value.split(',').map(x => x.trim()).filter(Boolean), useMySettings: mine.checked });
-      await store.style.set(styleBox.value); styleRules = styleBox.value; refreshCoachLabel();
+      await store.settings.set({ agent: agent.value, command: cmd.value.trim(), args: args.value.trim(), localUrl: localUrl.value.trim(), model: model.value.trim(), quickAgent: qagent.value, quickModel: qmodel.value.trim(), effort: effort.value, skills: skills.value.split(',').map(x => x.trim()).filter(Boolean), useMySettings: mine.checked });
+      await store.style.set(styleBox.value); styleRules = styleBox.value; refreshCoachLabel(); warmCoach(true);
       await store.feedback.set(fbBox.value); feedbackText = fbBox.value;
       msg.textContent = 'Saved. The next coach request uses these settings.';
     } catch (e) { err.textContent = String(e); }

@@ -96,6 +96,7 @@ Then **Rehearse** mode. **Start the meeting**: the panel asks its hardest questi
 
 - **Default data folder**: switch between workspaces or create one.
 - **Coach agent**: the bundled Claude Code, anything found on your PATH, or a custom ACP command.
+- **Quick coach**: conversational turns (Interview me, Thesis, Options table, TL;DR, Fix English, Lint, 30-second read) can go to a faster or free coach, while the judging turns (Review this section, Review document, Read as my reader, Rehearse, Claims, Check facts) stay on the main coach. A local model for quick and Claude for deep keeps most of a session free and fast; each reply in the thread says which coach answered. Margin also sends each turn only what it needs: section-level actions send the current section plus the other headings, reviews carry only the last exchange, and attachments travel only for fact checks or when you name one.
 - **Model and skills**: the model list comes from the agent you picked (Claude Code or Devin each report their own); leave it empty for the agent's default. For Claude Code also effort (low to max; higher is slower and costlier), skills to preload, and whether to load your own `~/.claude` settings. Off keeps the coach isolated.
 - **Style rules**: your house style, applied in every review and by Lint. Shared with the team through the workspace.
 - **Reviewer feedback**: what Learn from feedback collected.

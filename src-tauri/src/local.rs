@@ -54,6 +54,15 @@ fn ask_ollama(base: &str, model: &str, system: &str, prompt: &str, images: &[(St
     Ok(finish)
 }
 
+/// Load the model and let the server cache the shared prompt prefix, so the first real turn is not the slow one.
+/// Ollama only (its native API caches by prefix); a no-op elsewhere.
+pub fn warm(base: &str, model: &str, system: &str) {
+    if !is_ollama(base) { return; }
+    let body = json!({ "model": model, "stream": false, "think": false, "keep_alive": "1h", "options": {"num_predict": 1},
+        "messages": [{"role": "system", "content": system}, {"role": "user", "content": "ok"}] });
+    let _ = client(300).and_then(|c| c.post(format!("{}/api/chat", host(base))).json(&body).send().map_err(|e| e.to_string()));
+}
+
 /// One coach turn, streamed. Returns the finish reason when the server gives one.
 pub fn ask(base: &str, model: &str, system: &str, prompt: &str, images: &[(String, String)], mut on_text: impl FnMut(&str)) -> Result<Option<String>, String> {
     if is_ollama(base) { return ask_ollama(base, model, system, prompt, images, &mut on_text); }
@@ -134,5 +143,31 @@ mod tests {
         let stop = super::ask(base, model, "Reply with exactly: pong", "ping", &[], |t| text.push_str(t)).unwrap();
         println!("{model}: stop={stop:?} text={text}");
         assert!(text.to_lowercase().contains("pong"), "got: {text}");
+    }
+}
+
+#[cfg(test)]
+mod quick {
+    /// A quick-tier interview turn on the local model, section-scoped: `cargo test local_quick -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn local_quick_turn() {
+        use crate::prompt;
+        use serde_json::json;
+        let base = "http://localhost:11434";
+        let model = std::env::var("LOCAL_MODEL").unwrap_or_else(|_| "gemma4:12b-it-qat".into());
+        let body = json!({
+            "mode": "interview", "scope": "section", "current": "Context and problem", "title": "Rate limiter for the Payments API", "notes": "",
+            "template": {"name": "Design doc", "sections": [{"title": "Context and problem", "hint": "What is broken?", "checks": "clear problem, who is affected, evidence with numbers"}, {"title": "Proposed design", "hint": "How?", "checks": "flow"}]},
+            "sections": [{"title": "Context and problem", "text": "Payments API get too many request from some client, it make slow for everyone."}, {"title": "Proposed design", "text": ""}],
+            "history": [{"role": "user", "content": "Interview me for the \"Context and problem\" section. Ask me one question at a time."}]
+        });
+        let system = prompt::system_for("interview", "section", true);
+        super::warm(base, &model, &system);
+        let started = std::time::Instant::now();
+        let mut reply = String::new();
+        super::ask(base, &model, &system, &prompt::build(&body), &[], |t| reply.push_str(t)).unwrap();
+        println!("--- quick turn {model}: {:.0}s\n{reply}", started.elapsed().as_secs_f32());
+        assert!(reply.contains('?'), "should ask a question");
     }
 }

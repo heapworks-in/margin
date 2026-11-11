@@ -3,6 +3,28 @@
 use serde_json::Value;
 
 pub const SYSTEM: &str = concat!(include_str!("coach_prompt.md"), include_str!("../../static/guide.md"));
+const COACH: &str = include_str!("coach_prompt.md");
+const GUIDE: &str = include_str!("../../static/guide.md");
+const GUIDE_SHORT: &str = include_str!("guide-short.md");
+
+/// The system prompt a turn actually needs: the coach's core, the rules for this mode only, the tag formats this
+/// mode emits, and the guide (full for a hosted review, short otherwise). Half the tokens of the whole prompt.
+pub fn system_for(mode: &str, scope: &str, local: bool) -> String {
+    let cut = |from: &str, to: &str| -> String {
+        let a = COACH.find(from).unwrap_or(0);
+        let b = COACH[a..].find(to).map(|i| a + i).unwrap_or(COACH.len());
+        COACH[a..b].to_string()
+    };
+    let core = cut("", "MODE interview:");
+    let (rules, tags) = match mode {
+        "interview" => (cut("MODE interview:", "MODE rehearse"), format!("Tag formats (use them exactly, never inside code fences):\n{}", cut("<draft section=\"Exact section title\">", "Outside tags"))),
+        "rehearse" => (cut("MODE rehearse", "MODE review:"), format!("Tag formats (use them exactly, never inside code fences):\n{}{}", cut("<grade value=\"1-5\">One line", "<diagram title="), cut("<draft section=\"Exact section title\">", "Outside tags"))),
+        _ => (cut("MODE review:", "Tag formats"), cut("Tag formats", "----- THE GUIDE")),
+    };
+    let scope_note = if scope == "section" { "\nOnly the current section's text is in <document>; the other sections exist (their titles are listed, marked omitted) but were not sent. Do not call them empty or missing, and do not quote them.\n" } else { "" };
+    let guide = if mode == "review" && !local { GUIDE } else { GUIDE_SHORT };
+    format!("{core}{rules}\n{tags}\n{}\n{scope_note}\n----- THE GUIDE -----\n{guide}", cut("Outside tags", "----- THE GUIDE"))
+}
 /// For local models: the same coach, with the guide condensed (fewer tokens to chew through per review).
 pub const SYSTEM_LOCAL: &str = concat!(include_str!("coach_prompt.md"), include_str!("guide-short.md"));
 
@@ -21,8 +43,10 @@ fn render_context(body: &Value) -> String {
     let guide: Vec<String> = tpl["sections"].as_array().unwrap_or(&none).iter()
         .map(|x| format!("- {}: {} Reviewers check: {}", s(&x["title"]), s(&x["hint"]), s(&x["checks"])))
         .collect();
+    let section_only = s(&body["scope"]) == "section";
+    let current = s(&body["current"]);
     let sections: Vec<String> = body["sections"].as_array().unwrap_or(&none).iter()
-        .map(|x| format!("<section title=\"{}\">\n{}\n</section>", s(&x["title"]), or_empty(s(&x["text"]))))
+        .map(|x| if section_only && s(&x["title"]) != current { format!("<section title=\"{}\" omitted=\"yes\"/>", s(&x["title"])) } else { format!("<section title=\"{}\">\n{}\n</section>", s(&x["title"]), or_empty(s(&x["text"]))) })
         .collect();
     let title = match s(&body["title"]) { "" => "Untitled", t => t };
     let mode = match s(&body["mode"]) { "" => "review", m => m };
@@ -84,6 +108,19 @@ mod tests {
     use serde_json::json;
 
     #[test]
+    fn system_prompt_per_mode() {
+        let i = system_for("interview", "section", true);
+        let r = system_for("review", "document", false);
+        assert!(i.contains("MODE interview") && !i.contains("MODE review") && i.contains("<draft section=") && !i.contains("<score dimension"));
+        assert!(r.contains("MODE review") && !r.contains("MODE interview") && r.contains("<score dimension") && r.contains("## 1. Decide who it is for"));
+        assert!(i.contains("marked omitted") && !r.contains("marked omitted"));
+        assert!(i.len() < SYSTEM.len() / 2, "interview prompt should be under half the full one: {} vs {}", i.len(), SYSTEM.len());
+        let body = json!({"scope": "section", "current": "B", "sections": [{"title": "A", "text": "aaa"}, {"title": "B", "text": "bbb"}], "template": {"name": "t", "sections": []}, "history": [{"role": "user", "content": "x"}]});
+        let p = build(&body);
+        assert!(p.contains("<section title=\"A\" omitted=\"yes\"/>") && p.contains("bbb") && !p.contains("aaa"));
+    }
+
+    #[test]
     fn builds_prompt() {
         let body = json!({
             "mode": "review", "current": "Context and problem", "title": "Rate limiter", "notes": "clients spam api",
@@ -121,5 +158,18 @@ mod tests {
         assert!(p.contains("<attachment name=\"notes.txt\">\nlatency 2s\n</attachment>"));
         assert!(!p.contains("AAAA"));
         assert_eq!(images(&body), vec![("image/png".to_string(), "AAAA".to_string())]);
+    }
+}
+
+#[cfg(test)]
+mod sizes {
+    /// `cargo test sizes -- --nocapture`: words in the system prompt per mode (a proxy for tokens).
+    #[test]
+    fn print_sizes() {
+        let w = |s: &str| s.split_whitespace().count();
+        println!("full (old, every turn): {}", w(super::SYSTEM));
+        for (m, sc, l) in [("interview", "section", true), ("interview", "section", false), ("review", "section", false), ("review", "document", false), ("review", "section", true), ("rehearse", "document", false)] {
+            println!("{m:9} {sc:8} local={l:5}: {}", w(&super::system_for(m, sc, l)));
+        }
     }
 }
