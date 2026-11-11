@@ -46,6 +46,8 @@ The chat bar has three modes. **Interview** is for when the thinking is not done
 - **TL;DR** writes the 20-second version (three bullets) and the 2-minute version at the top. Run it again after a review and it adds "since the last review".
 - **What is missing?** looks end to end and lists the gaps, most important first.
 
+Every message in the thread carries its time; a coach reply also shows how long it took and which coach answered, so the thread reads as a log of the session. **Stop** gives up on a slow turn.
+
 Type anything in the box too. Broken English is fine; the coach reads meaning and never comments on your chat, only on the document.
 
 ## 6. Review a section (Review mode)

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Margin</title>
 <link href="vendor/fonts/fonts.css" rel="stylesheet">
-<script src="vendor/editor.js?v=55"></script>
+<script src="vendor/editor.js?v=57"></script>
 <style>
 :root{
   color-scheme:dark;
@@ -100,6 +100,8 @@ button:disabled{opacity:.45;cursor:default}
 .log{flex:1;min-height:0;overflow:auto;padding:10px 14px 12px;display:flex;flex-direction:column;gap:10px}
 .msg.user{align-self:flex-end;max-width:80%;background:var(--accent-soft);color:#CFE0FF;padding:6px 10px;border-radius:10px 10px 3px 10px;white-space:pre-wrap;font-size:12.5px}
 .msg.assistant{display:flex;flex-direction:column;gap:6px;color:var(--ink-2);font-size:13px;max-width:70ch}
+.msg .stamp{display:block;font-size:11px;color:var(--faint);font-variant-numeric:tabular-nums;margin-top:2px}
+.msg.user .stamp{text-align:right;color:#8FA8CF}
 .md p{margin:0 0 6px}.md p:last-child{margin:0}
 .md ul,.md ol{margin:0 0 6px;padding-left:18px}
 .md li{margin:2px 0}
@@ -783,7 +785,9 @@ const store = inApp ? {
 };
 
 const blank = () => ({ id: null, title: '', templateId: 'design', notes: '', docJson: null, current: null, mode: 'review', chat: [], comments: [], checks: {}, audience: '', purpose: '', brief: { ask: '', objection: '', deadline: '', numbers: '', nongoals: '' }, rubric: null, reader: null, claims: [], grades: [], reviewStats: [], publish: null, attachments: [], focus: false, threadOpen: false });
-let styleRules = '', feedbackText = '';
+let styleRules = '', feedbackText = '', coachLabel = '';
+const coachName = () => coachLabel;
+async function refreshCoachLabel() { try { const c = await store.settings.get(); coachLabel = c.agent === 'local' ? (c.model ? `local \u00b7 ${c.model}` : 'local model') : c.agent === 'claude' ? (c.model ? `Claude Code \u00b7 ${c.model}` : 'Claude Code') : c.agent === 'custom' ? 'custom agent' : (c.agent || '') + (c.model ? ` \u00b7 ${c.model}` : ''); } catch { coachLabel = ''; } }
 let savedTimer, saveTimer, saving = false, dirty = false;
 function meta() {
   const all = sections(), n = docWords();
@@ -1144,7 +1148,7 @@ function typing(label, since) {
 }
 let sendSeq = 0;
 /** Give up on the running coach turn: the bar comes back, late chunks are ignored, the agent's work is left to finish on its own. */
-function cancelSend() { sendSeq++; const m = state.chat[state.chat.length - 1]; if (m && m.role === 'assistant' && !m.done) { m.done = true; m.content = (m.content.trim() ? m.content + '\n\n' : '') + '(Stopped.)'; } setBusy(false); renderLog(); }
+function cancelSend() { sendSeq++; const m = state.chat[state.chat.length - 1]; if (m && m.role === 'assistant' && !m.done) { m.done = true; m.took = Date.now() - m.since; m.content = (m.content.trim() ? m.content + '\n\n' : '') + '(Stopped.)'; } setBusy(false); renderLog(); }
 function findSection(name) {
   const n = (name || '').trim().toLowerCase();
   if (n === 'raw notes') return NOTES;
@@ -1207,8 +1211,11 @@ function advanceAfter(section) {
   state.chat.push({ role: 'assistant', content: '', done: true, ui: true, advance: { from: section, to: next ? next.title : null, status: next ? next.status : null } });
   renderLog();
 }
+// When a message was sent, and how long the coach took: the thread is a log you can read back.
+const hhmm = t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const stamp = m => { if (!m.at) return null; const parts = [hhmm(m.at)]; if (m.took) { const s = Math.round(m.took / 1000); parts.push(`${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`); } if (m.coach) parts.push(m.coach); return el('time', { className: 'stamp', textContent: parts.join(' \u00b7 '), title: new Date(m.at).toLocaleString() }); };
 function fillMsg(d, m) {
-  if (m.role === 'user') { d.textContent = m.label || m.content; return; }
+  if (m.role === 'user') { d.replaceChildren(...[el('span', { textContent: m.label || m.content }), stamp(m)].filter(Boolean)); return; }
   if (m.advance) {
     const a = m.advance, line = el('div', { className: 'advance' });
     line.innerHTML = `<b>${esc(a.from)}</b> passes every check.` + (a.to ? ` Weakest next: <b>${esc(a.to)}</b> (${esc(STATUS_LABEL[a.status] || '').toLowerCase()}).` : ' Every section is ready. Run the panel review.');
@@ -1224,6 +1231,7 @@ function fillMsg(d, m) {
   if (text) nodes.push(md(text));
   if (!m.done) nodes.push(typing(/<(note|draft)\b/.test(m.content.slice(-400)) ? 'Writing a comment' : m.content.trim() ? 'Writing' : 'Thinking', m.since));
   else if (m.added) { const a = el('button', { className: 'added', type: 'button', innerHTML: `${m.added} note${m.added === 1 ? '' : 's'} added to the document →` }); a.onclick = () => { showView('doc'); const first = state.comments.find(c => !c.resolved); if (first) activate(first.id, true); }; nodes.push(a); }
+  if (m.done) nodes.push(stamp(m));
   d.replaceChildren(...nodes.filter(Boolean));
 }
 function welcome() {
@@ -1476,8 +1484,8 @@ async function send(text, opts = {}) {
   if (busy || !text.trim()) return;
   setBusy(true);
   const section = state.current;
-  state.chat.push({ role: 'user', content: text.trim(), hidden: !!opts.hidden, label: opts.label || '' });
-  const m = { role: 'assistant', content: '', done: false, verify: !!opts.hidden, since: Date.now() };
+  state.chat.push({ role: 'user', content: text.trim(), hidden: !!opts.hidden, label: opts.label || '', at: Date.now() });
+  const m = { role: 'assistant', content: '', done: false, verify: !!opts.hidden, since: Date.now(), at: Date.now(), coach: coachName() };
   const seq = ++sendSeq;
   setThread(true);
   state.chat.push(m);
@@ -1495,7 +1503,7 @@ async function send(text, opts = {}) {
   }
   if (seq !== sendSeq) return; // stopped by the writer; whatever arrives now is ignored
   if (!m.content.trim()) m.content = 'The coach sent no answer. Please try again.';
-  m.done = true;
+  m.done = true; m.took = Date.now() - m.since;
   let before = state.comments.length, unfound = [];
   try {
   m.added = ingest(m.content, section);
@@ -1823,7 +1831,7 @@ async function renderSettings() {
     msg.textContent = ''; err.textContent = '';
     try {
       await store.settings.set({ agent: agent.value, command: cmd.value.trim(), args: args.value.trim(), localUrl: localUrl.value.trim(), model: model.value.trim(), effort: effort.value, skills: skills.value.split(',').map(x => x.trim()).filter(Boolean), useMySettings: mine.checked });
-      await store.style.set(styleBox.value); styleRules = styleBox.value;
+      await store.style.set(styleBox.value); styleRules = styleBox.value; refreshCoachLabel();
       await store.feedback.set(fbBox.value); feedbackText = fbBox.value;
       msg.textContent = 'Saved. The next coach request uses these settings.';
     } catch (e) { err.textContent = String(e); }
@@ -1981,6 +1989,7 @@ store.ws.info().then(i => { $('#ws-crumb').textContent = i.name; }).catch(() => 
 store.style.get().then(t => { styleRules = t || ''; }).catch(() => {});
 loadCustomTemplates();
 store.feedback.get().then(t => { feedbackText = t || ''; }).catch(() => {});
+refreshCoachLabel();
 
 /* ---------- images and diagrams ---------- */
 let diagramReady = null;
