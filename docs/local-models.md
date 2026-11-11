@@ -65,7 +65,8 @@ for m in glob.glob(f"{__import__('os').environ['HOME']}/.ollama/models/manifests
 EOF
 
 # serve it on port 8080 with everything on the GPU, flash attention on, a 16k context
-llama-server -m ~/.ollama/models/blobs/sha256-… --port 8080 -ngl 99 -fa on -c 16384 --alias gemma4-12b
+llama-server -m ~/.ollama/models/blobs/sha256-… --port 8080 -ngl 99 -fa on -c 16384 --alias gemma4-12b \
+  --chat-template-kwargs '{"enable_thinking":false}'   # otherwise a thinking model reasons silently for a minute first
 ```
 
 In Margin: Settings → Local model → Server URL `http://localhost:8080`, then pick the model. Measured on an M1 Max with gemma4 12B (same file, same review prompt): see the table at the end of this page.
@@ -98,6 +99,6 @@ Same document, same "Review this section" prompt, gemma4 12B (`it-qat`), model a
 |---|---|---|---|
 | Ollama 0.40, OpenAI endpoint, thinking on | ~60 s | 81 s | silent reasoning before the first word |
 | Ollama 0.40, native API, thinking off | ~5 s | 31 s | what Margin uses since 0.6.3 |
-| llama.cpp (same GGUF), `-fa on` | measured below | | |
+| llama.cpp 0.8 (same GGUF), `-ngl 99 -c 16384`, thinking on | ~25 s | 119 s | prompt 181 tok/s, writing 21 tok/s; it wrote 2,096 tokens because the model's reasoning was left on |
 
-The llama.cpp row is filled in from a real run; if it is blank, the run has not happened yet.
+Takeaways from the numbers: Ollama's native API with thinking off is the fastest path on this machine, and llama.cpp is not faster for the same file unless you also turn thinking off (`--chat-template-kwargs '{"enable_thinking":false}'` on `llama-server`) and keep the model warm; expect it to land within ±20 % of Ollama. The order of what matters: thinking off (3×), memory headroom (up to 3×), model size (2× between 12B and 26B), server choice (±20 %).
