@@ -96,7 +96,8 @@ mod tests {
     fn local_review_is_grounded() {
         use crate::prompt;
         use serde_json::json;
-        let base = "http://localhost:11434";
+        let base_env = std::env::var("LOCAL_BASE").unwrap_or_else(|_| "http://localhost:11434".into());
+        let base = base_env.as_str();
         let model = std::env::var("LOCAL_MODEL").unwrap_or_else(|_| "gemma4:26b".into());
         let text = "Payments API get too many request from some client, it make slow for everyone. We see this mostly at month end when batch jobs run.\n\n- p99 goes from 200ms to 2s\n- support tickets double";
         let body = json!({
