@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Margin</title>
 <link href="vendor/fonts/fonts.css" rel="stylesheet">
-<script src="vendor/editor.js?v=67"></script>
+<script src="vendor/editor.js?v=68"></script>
 <style>
 :root{
   color-scheme:dark;
@@ -853,7 +853,7 @@ function parseTemplateText(text) {
   return text.split('\n').map(l => l.trim()).filter(Boolean).map(l => { const [title, hint, checks] = l.split('|').map(x => (x || '').trim()); return { title, hint: hint || '', checks: checks || '' }; }).filter(x => x.title);
 }
 /** Editor for a custom type. `id` null = new; `seed` prefills (e.g. from the open document). */
-function openTemplateEditor(id, seed) {
+function openTemplateEditor(id, seed, derivedRules) {
   const m = $('#import'); m.replaceChildren();
   const cur = id ? customTemplates[id] : seed || null;
   const box = el('div', { className: 'box wide' });
@@ -872,9 +872,17 @@ function openTemplateEditor(id, seed) {
     if (sections.length < 2) { err.textContent = 'At least two sections.'; return; }
     const key = id || slugId(name.value);
     customTemplates[key] = { name: name.value.trim(), readers: readers.value.split(',').map(x => x.trim()).filter(Boolean), sections };
-    try { await store.templates.set(customTemplates); } catch (e) { err.textContent = String(e); return; }
+    try { await store.templates.set(customTemplates); if (rulesBox && rulesBox._apply) await rulesBox._apply(); } catch (e) { err.textContent = String(e); return; }
     await loadCustomTemplates(); m.hidden = true; renderAll(); if (!$('#settings').hidden) renderSettings(); if (!$('#library').hidden) renderLibrary();
   };
+  let rulesBox = null;
+  if (derivedRules && derivedRules.length) {
+    rulesBox = el('label', { style: 'display:flex;gap:8px;align-items:flex-start' });
+    const cb = el('input', { type: 'checkbox', checked: true }); rulesBox.append(cb, el('span', { textContent: `Also add ${derivedRules.length} style rules learned from the exemplars to the workspace style rules:` }));
+    const pre = el('pre', { className: 'diff', style: 'max-height:22vh', textContent: derivedRules.map(r => '- ' + r).join('\n') });
+    rulesBox._apply = async () => { if (!cb.checked) return; const cur = styleRules || DEFAULT_STYLE; const next = cur.trimEnd() + '\n\nLEARNED FROM EXEMPLARS\n' + derivedRules.map((r, i) => `${i + 1}. ${r}`).join('\n'); await store.style.set(next); styleRules = next; };
+    box.append(rulesBox, pre);
+  }
   foot.append(err, cancel, saveBtn);
   if (id) { const del = el('button', { type: 'button', className: 'btn', textContent: 'Delete type' }); del.onclick = async () => { delete customTemplates[id]; await store.templates.set(customTemplates); await loadCustomTemplates(); m.hidden = true; renderAll(); if (!$('#settings').hidden) renderSettings(); if (!$('#library').hidden) renderLibrary(); }; foot.prepend(del); }
   box.append(ln, lr, ta, foot); m.append(box); m.hidden = false; name.focus();
@@ -1170,7 +1178,7 @@ function md(t) {
 }
 const kindOf = a => KIND_LABEL[a.type] && a.type !== 'draft' ? a.type : 'structure';
 // Text the thread shows: the reply minus its tags (they become comments).
-const prose = text => text.replace(/<(check|score|claim|note|reader)\b([^>]*?)\s*\/>/g, '<$1$2></$1>').replace(/<addressed\b[^>]*>[\s\S]*?<\/addressed>/g, '').replace(TAG, '').replace(/<(check|score|claim|diagram)\b[^>]*>[\s\S]*?<\/\1>/g, '').replace(/<reader\b[^>]*decision="(\w+)"[^>]*>([\s\S]*?)<\/reader>/g, (m, d, why) => `**Your reader ${{ yes: 'says yes', ask: 'would ask first', no: 'says no' }[d.toLowerCase()] || 'decides'}.** ${why.trim()}`).replace(/<grade\b[^>]*value="(\d)"[^>]*>([\s\S]*?)<\/grade>/g, (m, v, why) => `**Answer graded ${v}/5.** ${why.trim()}`).replace(/<verdict>[\s\S]*?<\/verdict>/g, '').replace(/<(note|draft|check|score|verdict|claim|grade|diagram)\b[\s\S]*$/, '').replace(/\n{3,}/g, '\n\n').trim();
+const prose = text => text.replace(/<(check|score|claim|note|reader)\b([^>]*?)\s*\/>/g, '<$1$2></$1>').replace(/<addressed\b[^>]*>[\s\S]*?<\/addressed>/g, '').replace(/<(type|style)\b[^>]*>[\s\S]*?<\/\1>/g, '').replace(TAG, '').replace(/<(check|score|claim|diagram)\b[^>]*>[\s\S]*?<\/\1>/g, '').replace(/<reader\b[^>]*decision="(\w+)"[^>]*>([\s\S]*?)<\/reader>/g, (m, d, why) => `**Your reader ${{ yes: 'says yes', ask: 'would ask first', no: 'says no' }[d.toLowerCase()] || 'decides'}.** ${why.trim()}`).replace(/<grade\b[^>]*value="(\d)"[^>]*>([\s\S]*?)<\/grade>/g, (m, v, why) => `**Answer graded ${v}/5.** ${why.trim()}`).replace(/<verdict>[\s\S]*?<\/verdict>/g, '').replace(/<(note|draft|check|score|verdict|claim|grade|diagram)\b[\s\S]*$/, '').replace(/\n{3,}/g, '\n\n').trim();
 function typing(label, since) {
   const d = el('div', { className: 'pending', innerHTML: `<span class="typing"><i></i><i></i><i></i></span>${esc(label)}` });
   if (since) { const t = el('span', { className: 'elapsed' }); const tick = () => { const s = Math.round((Date.now() - since) / 1000); t.textContent = ` ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; }; tick(); const iv = setInterval(() => { if (!d.isConnected) return clearInterval(iv); tick(); }, 1000); d.append(t); }
@@ -1709,7 +1717,7 @@ function payload(opts = {}) {
     tier, scope,
     workspace: tier === 'deep' && scope === 'document' ? workspaceDigest : '',
     mode: state.mode, current: state.current, title: state.title, notes: state.notes, audience: state.audience || '', purpose: state.purpose || '', brief: state.brief || {}, style: styleRules || DEFAULT_STYLE,
-    attachments: sendFiles ? state.attachments.map(a => a.kind === 'image' ? { name: a.name, kind: 'image', mime: a.mime, data: images[a.id] || '' } : { name: a.name, kind: a.kind, text: a.text || '' }).filter(a => a.kind !== 'image' || a.data) : [],
+    attachments: opts.files ? opts.files : sendFiles ? state.attachments.map(a => a.kind === 'image' ? { name: a.name, kind: 'image', mime: a.mime, data: images[a.id] || '' } : { name: a.name, kind: a.kind, text: a.text || '' }).filter(a => a.kind !== 'image' || a.data) : [],
     template: { name: tpl().name, sections: tpl().sections },
     sections: sections().map(({ title, text }) => ({ title, text: scope === 'section' && title !== state.current ? '' : scope === 'changed' && !changedSections().includes(title) ? '' : text })),
     earlier: scope === 'changed' ? state.comments.filter(c => !c.resolved && c.kind !== 'draft' && changedSections().includes(c.section)).map(c => ({ id: c.id, kind: c.kind, section: c.section, quote: c.quote || '', body: c.body })) : [],
@@ -1756,6 +1764,16 @@ async function send(text, opts = {}) {
   setBusy(false);
   save(); renderComments();
   if (m.added) showView('doc');
+  if (opts.exemplars && m.done) {
+    const ty = m.content.match(/<type\b([^>]*)>([\s\S]*?)<\/type>/), st = m.content.match(/<style>([\s\S]*?)<\/style>/);
+    if (ty) {
+      const a = attrs(ty[1]);
+      const seed = { name: a.name || 'House document', readers: (a.readers || '').split(',').map(x => x.trim()).filter(x => PERSONAS[x]), sections: parseTemplateText(ty[2]) };
+      const rules = st ? st[1].split('\n').map(x => x.trim().replace(/^[-*\d.)\s]+/, '')).filter(Boolean) : [];
+      m.content = `Derived from ${opts.exemplars} exemplar${opts.exemplars === 1 ? '' : 's'}: the type \u201c${seed.name}\u201d with ${seed.sections.length} sections${rules.length ? `, and ${rules.length} style rules` : ''}. Check them before saving.`;
+      openTemplateEditor(null, seed, rules);
+    } else m.content += '\n\n(The coach did not return a type. Try with a longer or cleaner exemplar.)';
+  }
   if (opts.feedback && m.done) {
     const weights = (m.content.match(/^Weight:.*$/gm) || []).map(x => x.trim());
     if (weights.length) { try { const cur = (await store.feedback.get()) || ''; const next = (cur.trim() + '\n\n' + new Date().toISOString().slice(0, 10) + ' · ' + (state.title || 'Untitled') + '\n' + weights.join('\n')).trim(); await store.feedback.set(next); feedbackText = next; } catch (e) { console.warn(e); } }
@@ -1781,7 +1799,9 @@ async function mockCoach(text, emit) {
   const sec = state.current, body = sectionText(sec).replace(/^\s*([-*+]|\d+\.)\s+/gm, '').replace(/[*_`#>\[\]]/g, '');
   const w = body.split(/\s+/).filter(Boolean);
   const q1 = w.slice(0, 6).join(' '), q2 = w.slice(-4).join(' ');
-  const reply = /Review what changed since your last review/.test(text)
+  const reply = /Derive the standard from the/.test(text)
+        ? `<type name="Technical memo" readers="Staff peer, Skeptical VP, Implementing engineer">Summary | What is decided and what is asked? | ask stated, one paragraph\nBackground | What does the reader need to know first? | assumptions marked, numbers sourced\nOptions | What else was considered? | do-nothing included, same criteria\nRecommendation | What do we do and why? | one recommendation, trade-off named</type>\n<style>Numbers carry their unit and a source in brackets.\nEvery section opens with its conclusion.\nNo bullet has more than two lines.</style>`
+      : /Review what changed since your last review/.test(text)
         ? (() => { const open = state.comments.filter(c => !c.resolved && c.kind !== 'draft' && changedSections().includes(c.section)); return `Your edits settle ${Math.min(1, open.length)} earlier note.\n\n${open[0] ? `<addressed id="${open[0].id}">The new text gives the number.</addressed>` : ''}\n\n<note type="question" severity="low">Did the change alter the rollout plan?</note>\n\nNext: re-run the panel.`; })()
       : /Draft the document from my notes/.test(text)
         ? `Here is a first draft from your notes. Three gaps to fill first: the client names, the Redis cluster cost, and who owns the rollout.\n\n${tpl().sections.slice(0, 4).map(s => `<draft section="${s.title}">${s.title === 'Context and problem' ? 'Three of 240 clients send about 70% of Payments API traffic at month end. p99 latency rises from 200 ms to 2.1 s for every client, and the on-call engineer throttles by hand. Three incidents last quarter (INC-412, INC-418, INC-433) came from this.' : s.title === 'Proposed design' ? 'A per-client token bucket in Redis gives each client 500 requests per second. The API gateway checks the bucket and answers 429 with Retry-After when it is empty. If Redis is slow, the limiter fails open. [TODO: Redis timeout before failing open]' : `[TODO: ${s.hint}]`}</draft>`).join('\n')}`
@@ -2077,7 +2097,8 @@ async function renderSettings() {
   const crow = el('div', { style: 'display:flex;gap:8px;flex-wrap:wrap' });
   const cnew = el('button', { type: 'button', className: 'btn', textContent: 'New type…' }); cnew.onclick = () => openTemplateEditor(null);
   const cfrom = el('button', { type: 'button', className: 'btn', textContent: 'From the open document’s headings' }); cfrom.onclick = () => openTemplateEditor(null, templateFromDocument()); if (!state.id || !sections().length) cfrom.disabled = true;
-  crow.append(cnew, cfrom); ct.append(clist, crow); box.append(ct);
+  const cex = el('button', { type: 'button', className: 'btn', textContent: 'From documents you admire\u2026', title: 'Derive a type and style rules from one to three exemplar documents' }); cex.onclick = openExemplars;
+  crow.append(cnew, cfrom, cex); ct.append(clist, crow); box.append(ct);
 
   // Style rules (workspace)
   const st = el('section', { className: 'set-sec' });
@@ -2110,6 +2131,33 @@ async function renderSettings() {
   foot.append(saveBtn, back, msg, err); box.append(foot);
 }
 $('#settings-btn').onclick = () => showView('settings');
+
+/* ---------- learn the house standard from exemplar documents ---------- */
+function openExemplars() {
+  const m = $('#import'); m.replaceChildren();
+  const box = el('div', { className: 'box wide' });
+  box.append(el('h2', { textContent: 'Learn the standard from documents you admire' }), el('p', { className: 'note', textContent: 'Paste one to three documents your organisation considers excellent, or add them as files (.md, .txt, .docx). The coach derives a document type (sections, the question each answers, what reviewers check) and the style rules they share. You review both before anything is saved. Runs on the deep coach.' }));
+  const files = [];
+  const list = el('div', { className: 'chips' });
+  const render = () => { list.replaceChildren(); for (const f of files) { const chip = el('span', { className: 'chip' }); chip.append(el('span', { className: 'nm', textContent: f.name }), el('small', { textContent: words(f.text) + ' words' })); const x = el('button', { type: 'button', textContent: '\u00d7' }); x.onclick = () => { files.splice(files.indexOf(f), 1); render(); }; chip.append(x); list.append(chip); } };
+  const ta = el('textarea', { rows: 8, placeholder: 'Paste an exemplar here, then press Add. Repeat for a second one.', style: 'background:var(--canvas);border:1px solid var(--line-strong);border-radius:8px;color:var(--ink);font:13px/1.5 var(--ui);padding:10px;outline:none;resize:vertical' });
+  const row = el('div', { style: 'display:flex;gap:8px;flex-wrap:wrap' });
+  const addPaste = el('button', { type: 'button', className: 'btn', textContent: 'Add the pasted text' }); addPaste.onclick = () => { if (!ta.value.trim()) return; files.push({ name: `pasted ${files.length + 1}`, text: ta.value.trim() }); ta.value = ''; render(); };
+  const addFile = el('button', { type: 'button', className: 'btn', textContent: 'Add files\u2026' });
+  addFile.onclick = async () => { for (const f of await pickFiles({ multiple: true, extensions: ['md', 'markdown', 'txt', 'docx'] })) { let text = ''; if (/\.docx$/i.test(f.name)) { await loadMammoth(); const { value: html } = await window.mammoth.convertToHtml({ arrayBuffer: await f.arrayBuffer() }); text = new DOMParser().parseFromString(html, 'text/html').body.textContent || ''; } else text = await readAs(f, 'text'); if (text.trim()) files.push({ name: f.name, text: text.trim() }); } render(); };
+  row.append(addPaste, addFile);
+  const foot = el('div', { className: 'foot' }); const err = el('span', { className: 'err' });
+  const cancel = el('button', { type: 'button', className: 'btn', textContent: 'Cancel' }); cancel.onclick = () => { m.hidden = true; };
+  const go = el('button', { type: 'button', className: 'btn primary', textContent: 'Derive the standard' });
+  go.onclick = () => {
+    if (ta.value.trim()) addPaste.onclick();
+    if (!files.length) { err.textContent = 'Add at least one document.'; return; }
+    if (files.length > 3) { err.textContent = 'Three at most; pick the best.'; return; }
+    m.hidden = true; setMode('review');
+    send(`Derive the standard from the ${files.length} exemplar document${files.length === 1 ? '' : 's'} attached. Output one <type> tag and one <style> tag, nothing else.`, { label: `Derive the standard from ${files.length} exemplar${files.length === 1 ? '' : 's'}`, tier: 'deep', scope: 'document', files: files.map(f => ({ name: f.name, kind: 'text', text: f.text.slice(0, 40000) })), exemplars: files.length });
+  };
+  foot.append(err, cancel, go); box.append(ta, row, list, foot); m.append(box); m.hidden = false; ta.focus();
+}
 
 /* ---------- document type router (the four questions) ---------- */
 const ROUTER = [

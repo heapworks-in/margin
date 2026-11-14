@@ -477,6 +477,23 @@ mod prompts {
     }
 
     #[test] #[ignore]
+    fn exemplars_yield_a_type_and_style() {
+        let mut b = body("review", "Context and problem", vec![user("Derive the standard from the 2 exemplar documents attached. Output one <type> tag and one <style> tag, nothing else.")]);
+        b["attachments"] = json!([
+            {"name": "memo-a.md", "kind": "text", "text": "# Move the ledger to Postgres\n\n## Summary\nWe ask the platform lead to approve moving the ledger to Postgres by 15 March. Cost: 2 engineers for 6 weeks.\n\n## Background\nThe ledger runs on DynamoDB (since 2023). p99 read latency is 48 ms (Grafana, ledger-reads, 2 Feb). Three incidents in Q4 came from hot partitions (INC-77, INC-81, INC-90).\n\n## Options\nDo nothing: three more incidents a quarter. Re-shard DynamoDB: 3 weeks, keeps the hot-partition class of failure. Postgres: 6 weeks, removes it.\n\n## Recommendation\nPostgres. We accept slower bulk writes (1,200/s vs 4,000/s) because the ledger writes 300/s at peak.\n\n## Risks\nMigration cutover; mitigated by dual writes for two weeks."},
+            {"name": "memo-b.md", "kind": "text", "text": "# Retire the legacy export API\n\n## Summary\nWe ask the API council to approve retiring /v1/export on 30 June. Cost: 1 engineer for 2 weeks.\n\n## Background\n/v1/export serves 4 of 310 clients (usage logs, January). It costs 9,000 USD a month in egress.\n\n## Options\nDo nothing: 9,000 USD a month continues. Rate-limit it: keeps the cost of maintenance. Retire with a migration guide: 2 weeks of work, then zero cost.\n\n## Recommendation\nRetire it. We accept that 4 clients must change code; we give them 90 days and a guide.\n\n## Risks\nA client misses the deadline; mitigated by a 30-day read-only grace period."}
+        ]);
+        let reply = turn_with("review", &b);
+        let ty = tags(&reply, "type");
+        assert_eq!(ty.len(), 1, "exactly one <type>");
+        let body_text = ty[0].split('>').nth(1).unwrap_or("");
+        let lines: Vec<&str> = body_text.split("</type>").next().unwrap_or("").lines().filter(|l| l.contains('|')).collect();
+        assert!(lines.len() >= 4, "sections derived: {lines:?}");
+        assert!(reply.to_lowercase().contains("recommendation"), "the exemplars' own section names should appear");
+        assert!(reply.contains("<style>") && reply.split("<style>").nth(1).unwrap().split("</style>").next().unwrap().lines().filter(|l| !l.trim().is_empty()).count() >= 3, "a few style rules");
+    }
+
+    #[test] #[ignore]
     fn thesis_is_written_or_blocked() {
         let reply = turn("interview", "Context and problem", vec![user("Give me the thesis for this document: the bottom line in at most 25 words, the ask, three supporting claims with facts, the strongest counterargument, and what would change your mind. If you cannot without inventing facts, say THESIS BLOCKED and ask me the questions.")]);
         assert!(reply.contains("THESIS BLOCKED") || reply.contains("<draft section=\""), "thesis should end in a draft, or be blocked");

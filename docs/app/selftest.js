@@ -189,6 +189,25 @@
     workspaceDigest = '';
   });
 
+  await step('learn the standard from exemplars', async () => {
+    openExemplars();
+    const m = document.querySelector('#import');
+    m.querySelector('textarea').value = '# Memo\n\n## Summary\nWe ask for X.\n\n## Background\n...';
+    [...m.querySelectorAll('button')].find(b => b.textContent === 'Derive the standard').click();
+    await wait(1500);
+    const inputs = document.querySelectorAll('#import input[type="text"]');
+    ok('editor opened with the derived type', !m.hidden && inputs[0] && inputs[0].value === 'Technical memo', inputs[0] && inputs[0].value);
+    ok('derived sections parsed', /Summary \| What is decided/.test(document.querySelector('#import textarea').value));
+    ok('style rules offered', /style rules learned/.test(m.textContent));
+    const before = styleRules;
+    [...m.querySelectorAll('button')].find(b => b.textContent === 'Create type').click();
+    await wait(300);
+    ok('type saved', !!TEMPLATES['custom:technical-memo']);
+    ok('style rules appended', /LEARNED FROM EXEMPLARS/.test(styleRules));
+    styleRules = before; await store.style.set(before);
+    delete customTemplates['technical-memo']; await store.templates.set(customTemplates); await loadCustomTemplates();
+  });
+
   await step('review packet and outcome', async () => {
     const pk = reviewPacket();
     ok('packet has brief, checks, rubric, claims and the document', ['## Brief', '## Ship checks', '## Panel rubric', '## Claims and sources', '## Context and problem'].every(h => pk.includes(h)));
