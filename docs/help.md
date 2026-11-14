@@ -101,7 +101,15 @@ The status bar's **Ship n/5** is the gate: no high-severity notes open, every cl
 
 **Export**: copy as Markdown, save a `.md` to Downloads, or **Publish to Confluence** (creates a page under a parent page you paste; publishing again updates the same page). Comments are never exported. Diagrams and images stay in Margin; a placeholder marks them.
 
-## 12. Settings
+## 12. Keyboard and shortcuts
+
+- **⌘K** opens the command palette: every coach action, Review document, Ship checks, Slop, the packet, publishing, views, sections, and the tour. Type to filter, Enter to run.
+- **Accept** on a note can be undone from the "Fixed. Undo" toast for a few seconds (⌘Z in the text also works).
+- **⌘\\** toggles focus mode. **Esc** closes any popover.
+- First launch shows a four-step tour of the spine, the Brief, the coach and the status bar; **Take the tour** in the palette replays it.
+- The Library shows each document's readiness (Ship n/5 or the real-review score) and its decision deadline, and the workspace line counts documents ready to ship.
+
+## 13. Settings
 
 - **Default data folder**: switch between workspaces or create one.
 - **Coach agent**: the bundled Claude Code, anything found on your PATH, or a custom ACP command.
@@ -110,7 +118,7 @@ The status bar's **Ship n/5** is the gate: no high-severity notes open, every cl
 - **Style rules**: your house style, applied in every review and by Lint. Shared with the team through the workspace.
 - **Reviewer feedback**: what Learn from feedback collected.
 
-## 13. A good session, start to finish
+## 14. A good session, start to finish
 
 1. Create the document; let **Which type?** choose. Fill the Brief, especially the objection.
 2. **Thesis**. If it is blocked, answer the questions first; that is the real work.
@@ -121,6 +129,6 @@ The status bar's **Ship n/5** is the gate: no high-severity notes open, every cl
 7. **Rehearse** the meeting once.
 8. **TL;DR**, export, share. After the real review, **Learn from feedback**.
 
-## 14. Privacy
+## 15. Privacy
 
 Documents, diagrams, attachments and history are plain files in your workspace. The app makes no network requests of its own; the only traffic is the coach process you chose talking to its own service (Claude Code to Anthropic, Devin to Cognition, and so on). Excalidraw is bundled with its fonts and library and never calls home. The Confluence token is stored only if you tick Remember.

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Margin</title>
 <link href="vendor/fonts/fonts.css" rel="stylesheet">
-<script src="vendor/editor.js?v=68"></script>
+<script src="vendor/editor.js?v=69"></script>
 <style>
 :root{
   color-scheme:dark;
@@ -347,6 +347,8 @@ mark.c-mark[data-kind="missing"]{background:var(--missing-bg);border-color:var(-
 mark.c-mark[data-kind="fact"]{background:var(--fact-bg);border-color:var(--fact)}
 mark.c-mark[data-kind="question"]{background:var(--question-bg);border-color:var(--question)}
 mark.c-mark[data-kind="reader"]{background:var(--reader-bg);border-color:var(--reader);border-bottom-style:dotted}
+mark.c-mark[data-kind="applied"]{background:none;border:0;padding:0}
+#saved .undo{margin-left:6px;background:none;border:1px solid currentColor;border-radius:5px;color:inherit;font:inherit;padding:0 7px;cursor:pointer}
 mark.c-mark.active{box-shadow:0 0 0 2px var(--accent-soft);filter:saturate(1.4)}
 .hljs-keyword,.hljs-built_in,.hljs-selector-tag{color:#C586C0}
 .hljs-string,.hljs-regexp,.hljs-addition{color:#CE9178}
@@ -388,6 +390,19 @@ mark.c-mark.active{box-shadow:0 0 0 2px var(--accent-soft);filter:saturate(1.4)}
 .router .q p{margin:0;font-size:14px;color:var(--ink)}
 .router .q .ans{display:flex;gap:8px}
 .router .result{font-size:14px;color:var(--ink);line-height:1.6}
+.modal .box.palette{width:min(640px,calc(100% - 40px));padding:10px;gap:6px}
+.palette input{width:100%;background:var(--canvas);border:1px solid var(--line-strong);border-radius:8px;color:var(--ink);font:15px var(--ui);padding:10px 12px;outline:none}
+.palette input:focus{border-color:var(--accent)}
+.plist{display:flex;flex-direction:column;gap:2px;max-height:50vh;overflow:auto}
+.prow{display:flex;align-items:baseline;gap:10px;padding:7px 10px;border-radius:7px;cursor:pointer;font-size:14px;color:var(--ink)}
+.prow small{color:var(--muted);margin-left:auto;white-space:nowrap}
+.prow.on,.prow:hover{background:var(--accent-soft)}
+.tour-card{position:fixed;z-index:120;width:340px;background:var(--panel);border:1px solid var(--accent);border-radius:12px;padding:14px 16px;box-shadow:0 30px 80px -30px #000;color:var(--ink-2);font-size:13.5px;line-height:1.5}
+.tour-card b{display:block;color:var(--ink);font-size:15px;margin-bottom:4px}
+.tour-card p{margin:0 0 10px}
+.tour-card .row{display:flex;gap:8px;align-items:center}
+.tour-card .dots{margin-right:auto;color:var(--faint);font-size:12px}
+.tour-target{outline:2px solid var(--accent);outline-offset:4px;border-radius:8px}
 .gate{display:flex;flex-direction:column;gap:6px;margin-top:6px}
 .gate .grow{display:grid;grid-template-columns:18px 1fr auto;gap:8px;align-items:baseline;font-size:13px;color:var(--ink-2)}
 .gate .grow i{font-style:normal;font-weight:700}
@@ -804,7 +819,7 @@ async function refreshCoachLabel() { try { const c = await store.settings.get();
 let savedTimer, saveTimer, saving = false, dirty = false;
 function meta() {
   const all = sections(), n = docWords();
-  return { words: n, sections: all.length, ready: all.filter(x => sectionStatus(x.title, x.words) === 'ready').length, open: state.comments.filter(c => !c.resolved).length, updated: Date.now(), outcome: state.outcome ? state.outcome.score : null, rubric: state.rubric ? Math.round(rubricAvg() * 10) / 10 : null, deadline: (state.brief || {}).deadline || '' };
+  return { words: n, sections: all.length, ready: all.filter(x => sectionStatus(x.title, x.words) === 'ready').length, open: state.comments.filter(c => !c.resolved).length, updated: Date.now(), ship: docWords() ? shipChecks().filter(c => c.ok).length : null, outcome: state.outcome ? state.outcome.score : null, rubric: state.rubric ? Math.round(rubricAvg() * 10) / 10 : null, deadline: (state.brief || {}).deadline || '' };
 }
 function save() {
   if (!state.id) return;
@@ -1370,6 +1385,78 @@ function attachEvidence(claim, name) {
   save(); renderComments();
 }
 
+/* ---------- command palette (⌘K): every action, from the keyboard ---------- */
+function commands() {
+  const out = [];
+  const cur = () => state.current || firstSection();
+  for (const [mode, list] of Object.entries(ACTIONS)) for (const [label, msg, tier, scope, withFiles] of list) out.push({ title: label, hint: `${mode} \u00b7 ${tier} coach`, run: () => { setMode(mode); const m = msg(cur()); if (m === '__feedback__') return openFeedback(); send(m, { label: `${label} \u00b7 ${cur()}`, tier, scope, withFiles }); } });
+  out.push({ title: 'Review document', hint: 'the panel, rubric and verdict', run: () => $('#review-all').click() });
+  out.push({ title: 'Underline slop', hint: 'machine-prose tells in your text', run: () => markSlop() });
+  out.push({ title: 'Ship checks', hint: 'is it ready to leave the room?', run: () => showGatePop($('#gate-btn') || $('#status')) });
+  out.push({ title: 'Record the real review', hint: 'how it went, 1 to 5', run: openOutcome });
+  out.push({ title: 'Save the review packet', hint: 'Markdown with rubric, claims and notes', run: savePacket });
+  out.push({ title: 'Copy as Markdown', hint: 'the document', run: () => $('#copy').click() });
+  out.push({ title: 'Publish to Confluence', hint: 'create or update the page', run: () => $('#publish-btn').click() });
+  out.push({ title: 'Focus mode', hint: 'hide everything but the text (\u2318\\)', run: () => setFocus(!state.focus) });
+  for (const [v, t] of [['doc', 'Document'], ['notes', 'Notes'], ['guide', 'Writing guide'], ['help', 'Help']]) out.push({ title: `Go to ${t}`, hint: 'view', run: () => showView(v) });
+  out.push({ title: 'Library', hint: 'all documents in the workspace', run: () => showView('library') });
+  out.push({ title: 'Settings', hint: 'coach, models, document types, style', run: () => showView('settings') });
+  out.push({ title: 'New document', hint: 'with the current type', run: () => createDoc('', state.templateId) });
+  out.push({ title: 'Which type?', hint: 'the document-type router', run: () => openRouter(t => createDoc('', t)) });
+  out.push({ title: 'New document type', hint: 'define your own', run: () => openTemplateEditor(null) });
+  out.push({ title: 'Learn the standard from documents you admire', hint: 'derive a type and style rules', run: openExemplars });
+  out.push({ title: 'Take the tour', hint: 'the four things on screen', run: () => tour(true) });
+  for (const t of titles().filter(Boolean)) out.push({ title: `Go to section: ${t}`, hint: 'section', run: () => { setCurrent(t); doc.reveal(t); } });
+  return out;
+}
+function openPalette() {
+  const m = $('#import'); m.replaceChildren();
+  const box = el('div', { className: 'box palette' });
+  const input = el('input', { type: 'text', placeholder: 'Type a command, an action or a section\u2026', autocomplete: 'off' });
+  const list = el('div', { className: 'plist' });
+  const all = commands(); let sel = 0, shown = [];
+  const draw = () => {
+    const q = input.value.trim().toLowerCase();
+    shown = (q ? all.filter(c => (c.title + ' ' + c.hint).toLowerCase().includes(q)) : all).slice(0, 12);
+    sel = Math.min(sel, Math.max(0, shown.length - 1));
+    list.replaceChildren(...shown.map((c, i) => { const r = el('div', { className: 'prow' + (i === sel ? ' on' : '') }); r.append(el('span', { className: 'n', textContent: c.title }), el('small', { textContent: c.hint })); r.onmousedown = e => { e.preventDefault(); go(c); }; return r; }));
+    if (!shown.length) list.append(el('div', { className: 'lessons-empty', textContent: 'Nothing matches.' }));
+  };
+  const go = c => { m.hidden = true; try { c.run(); } catch (e) { console.error(e); } };
+  input.oninput = () => { sel = 0; draw(); };
+  input.onkeydown = e => { if (e.key === 'ArrowDown') { sel = Math.min(sel + 1, shown.length - 1); draw(); e.preventDefault(); } else if (e.key === 'ArrowUp') { sel = Math.max(sel - 1, 0); draw(); e.preventDefault(); } else if (e.key === 'Enter') { if (shown[sel]) go(shown[sel]); e.preventDefault(); } else if (e.key === 'Escape') { m.hidden = true; } };
+  box.append(input, list); m.append(box); m.hidden = false; draw(); input.focus();
+}
+document.addEventListener('keydown', e => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); if ($('#import').hidden || !$('#import .palette')) openPalette(); else $('#import').hidden = true; } });
+
+/* ---------- first-run tour: the four things on screen ---------- */
+const TOUR_STEPS = [
+  { sel: '#toc', title: 'The spine', text: 'Every section this document type needs. A tick fills as you write and turns green when the section passes its checks. Hover for the question each section must answer.' },
+  { sel: '.aud', title: 'The Brief', text: 'Who reads this and what they should do after. Open Brief \u25be for the ask, their likely objection, the deadline and the numbers you have. The coach judges everything against it.' },
+  { sel: '#coach', title: 'The coach', text: 'Interview to think it through, Review to get notes on your text, Rehearse to practise the meeting. Notes land as underlines; click one for the fix. \u2318K opens every action.' },
+  { sel: '#status', title: 'The numbers', text: 'Words, sections ready, open notes, Slop, Ship n/5, the panel rubric and your reader\u2019s verdict. Each one opens when clicked. When Ship reads 5/5, send it.' },
+];
+function tour(force) {
+  try { if (!force && localStorage.getItem('margin-toured')) return; } catch {}
+  if (!$('#paper') || $('#paper').hidden) showView('doc');
+  let i = 0; const old = document.querySelector('.tour-card'); if (old) old.remove();
+  const card = el('div', { className: 'tour-card' });
+  const title = el('b'), text = el('p'), dots = el('span', { className: 'dots' });
+  const next = el('button', { type: 'button', className: 'btn primary' }), skip = el('button', { type: 'button', className: 'btn', textContent: 'Skip' });
+  const foot = el('div', { className: 'row' }); foot.append(dots, skip, next);
+  card.append(title, text, foot); document.body.append(card);
+  const clear = () => document.querySelectorAll('.tour-target').forEach(x => x.classList.remove('tour-target'));
+  const end = () => { clear(); card.remove(); try { localStorage.setItem('margin-toured', '1'); } catch {} };
+  const show = () => {
+    clear(); const st = TOUR_STEPS[i]; const t = document.querySelector(st.sel);
+    title.textContent = st.title; text.textContent = st.text; dots.textContent = `${i + 1} / ${TOUR_STEPS.length}`; next.textContent = i === TOUR_STEPS.length - 1 ? 'Start writing' : 'Next';
+    if (t) { t.classList.add('tour-target'); const r = t.getBoundingClientRect(); const w = 340, h = card.offsetHeight || 150; let left = Math.min(innerWidth - w - 12, Math.max(12, r.right + 14)); let top = Math.max(12, Math.min(innerHeight - h - 12, r.top)); if (r.right + w + 24 > innerWidth) { left = Math.max(12, r.left); top = r.top > innerHeight / 2 ? Math.max(12, r.top - h - 12) : Math.min(innerHeight - h - 12, r.bottom + 12); } card.style.left = left + 'px'; card.style.top = top + 'px'; }
+  };
+  next.onclick = () => { i++; if (i >= TOUR_STEPS.length) end(); else show(); };
+  skip.onclick = end;
+  show();
+}
+
 /* ---------- ship gate: is this document ready to leave the room? ---------- */
 function shipChecks() {
   const open = state.comments.filter(c => !c.resolved && c.kind !== 'draft');
@@ -1646,8 +1733,28 @@ function activate(id, scrollDoc) {
 function acceptFix(c) {
   if (!doc.replaceAnnotated(c.id, c.fix)) return;
   c.resolved = true; c.applied = true; c.anchored = false;
+  // Keep an invisible mark on the new words so Undo can find them.
+  c.undoable = !!doc.annotate(c.id, 'applied', c.fix, c.section);
   state.docJson = doc.json(); if (state.active === c.id) state.active = null;
   hidePop(); save(); renderComments();
+  showUndo(c);
+}
+function undoFix(c) {
+  if (!c.undoable || !doc.replaceAnnotated(c.id, c.quote)) return false;
+  doc.unannotate(c.id);
+  c.resolved = false; c.applied = false; c.undoable = false;
+  c.anchored = !!doc.annotate(c.id, c.kind, c.quote, c.section);
+  state.docJson = doc.json(); save(); renderComments();
+  return true;
+}
+let undoTimer = null;
+function showUndo(c) {
+  const s = $('#saved'); if (!s) return;
+  clearTimeout(undoTimer);
+  s.replaceChildren(el('span', { textContent: c.fix ? 'Fixed. ' : 'Removed. ' }));
+  const u = el('button', { type: 'button', className: 'undo', textContent: 'Undo' }); u.onclick = () => { undoFix(c); s.classList.remove('show'); s.textContent = 'Changes saved'; };
+  s.append(u); s.classList.add('show');
+  undoTimer = setTimeout(() => { s.classList.remove('show'); s.textContent = 'Changes saved'; }, 8000);
 }
 /* ---------- suggestion popover on highlights ---------- */
 let popTimer = null, popId = null;
@@ -1842,6 +1949,8 @@ async function openDoc(id) {
   renderAll();
   showView('doc');
   warmCoach(); refreshDigest();
+  if (!inApp && new URLSearchParams(location.search).has('demo')) return;
+  setTimeout(() => tour(false), 600);
 }
 let workspaceDigest = '';
 async function refreshDigest() { try { workspaceDigest = state.id ? (await store.digest(state.id)) || '' : ''; } catch { workspaceDigest = ''; } }
@@ -1864,7 +1973,7 @@ async function renderLibrary() {
   // Header: workspace name, path, switcher
   const head = el('div', { className: 'lib-head' });
   head.append(el('h1', { textContent: wsInfo.name }), el('span', { className: 'path', textContent: wsInfo.path }));
-  try { const all = await store.list(); const done = all.filter(d => d.outcome); if (done.length) head.append(el('span', { className: 'path', textContent: `\u00b7 real reviews: ${(done.reduce((a, d) => a + d.outcome, 0) / done.length).toFixed(1)}/5 over ${done.length}` })); } catch {}
+  try { const all = await store.list(); const done = all.filter(d => d.outcome), live = all.filter(d => !d.outcome && d.words); const ready = live.filter(d => d.ship === 5).length; head.append(el('span', { className: 'path', textContent: `\u00b7 ${all.length} document${all.length === 1 ? '' : 's'}${live.length ? ` \u00b7 ${ready} of ${live.length} in progress ready to ship` : ''}${done.length ? ` \u00b7 real reviews ${(done.reduce((a, d) => a + d.outcome, 0) / done.length).toFixed(1)}/5 over ${done.length}` : ''}` })); } catch {}
   const right = el('div', { className: 'right' });
   if (inApp) {
     const sw = el('select', { title: 'Switch workspace' });
@@ -1903,7 +2012,7 @@ async function renderLibrary() {
     const card = el('button', { type: 'button', className: 'doc' });
     card.append(el('div', { className: 't', textContent: d.title || 'Untitled' }), el('div', { className: 'k', textContent: (TEMPLATES[d.templateId]?.name || 'Document') + (d.updated ? ' · edited ' + ago(d.updated) : '') }));
     const m = el('div', { className: 'm' });
-    m.innerHTML = (d.outcome ? `<span>Real review <b>${d.outcome}/5</b></span>` : d.rubric ? `<span>Rubric <b>${d.rubric}</b></span>` : '') + `<span><b>${(d.words || 0).toLocaleString()}</b> words</span><span><b class="${d.sections && d.ready === d.sections ? 'ok' : ''}">${d.ready || 0}/${d.sections || 0}</b> sections ready</span>${d.open ? `<span class="warn"><b>${d.open}</b> open notes</span>` : ''}`;
+    m.innerHTML = (d.outcome ? `<span>Real review <b>${d.outcome}/5</b></span>` : d.ship != null ? `<span>Ship <b class="${d.ship === 5 ? 'ok' : ''}">${d.ship}/5</b></span>` : '') + (d.deadline ? `<span>Decision by <b>${esc(d.deadline)}</b></span>` : '') + `<span><b>${(d.words || 0).toLocaleString()}</b> words</span><span><b class="${d.sections && d.ready === d.sections ? 'ok' : ''}">${d.ready || 0}/${d.sections || 0}</b> sections ready</span>${d.open ? `<span class="warn"><b>${d.open}</b> open notes</span>` : ''}`;
     card.append(m);
     const x = el('button', { type: 'button', className: 'x', textContent: '×', title: 'Delete this document' });
     x.onclick = async e => { e.stopPropagation(); if (x.dataset.armed) { await store.remove(d.id); if (state.id === d.id) { state = blank(); localStorage.removeItem(LAST); } renderLibrary(); } else { x.dataset.armed = '1'; x.textContent = 'Delete?'; setTimeout(() => { x.dataset.armed = ''; x.textContent = '×'; }, 3000); } };

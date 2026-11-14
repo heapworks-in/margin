@@ -208,6 +208,26 @@
     delete customTemplates['technical-memo']; await store.templates.set(customTemplates); await loadCustomTemplates();
   });
 
+  await step('undo after accept, palette, tour, portfolio meta', async () => {
+    doc.setSection('Open questions', 'We leverage the cache.', 'replace'); renderMeta(); markSlop();
+    const lev = state.comments.find(c => c.slop && !c.resolved && /leverage/i.test(c.quote));
+    ok('slop note to accept', !!lev);
+    if (lev) { acceptFix(lev); ok('accepted and undoable', !/leverage/.test(sectionText('Open questions')) && lev.undoable && !!document.querySelector('#saved .undo')); ok('undo restores the words', undoFix(lev) && /leverage/.test(sectionText('Open questions')) && !lev.resolved); }
+    openPalette();
+    const inp = document.querySelector('#import .palette input');
+    ok('palette opens', !!inp);
+    inp.value = 'go to notes'; inp.dispatchEvent(new Event('input'));
+    inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    ok('palette runs a command', !document.querySelector('#notes').hidden);
+    showView('doc');
+    ok('palette lists coach actions and sections', commands().some(c => c.title === 'Review this section') && commands().some(c => c.title.startsWith('Go to section:')));
+    tour(true);
+    ok('tour shows a step on a target', !!document.querySelector('.tour-card') && !!document.querySelector('.tour-target'));
+    document.querySelector('.tour-card .btn.primary').click(); document.querySelector('.tour-card .btn.primary').click(); document.querySelector('.tour-card .btn.primary').click(); document.querySelector('.tour-card .btn.primary').click();
+    ok('tour ends and is remembered', !document.querySelector('.tour-card') && localStorage.getItem('margin-toured') === '1');
+    ok('meta carries ship readiness', typeof meta().ship === 'number');
+  });
+
   await step('review packet and outcome', async () => {
     const pk = reviewPacket();
     ok('packet has brief, checks, rubric, claims and the document', ['## Brief', '## Ship checks', '## Panel rubric', '## Claims and sources', '## Context and problem'].every(h => pk.includes(h)));

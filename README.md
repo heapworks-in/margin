@@ -10,6 +10,7 @@ A private writing coach for technical documents, as a macOS desktop app. You wri
 - **30-second read:** the coach reads only the title, first paragraph and headings and says what it thinks you are asking for. If that is not your ask, the structure is wrong.
 - **Claims:** every claim and number in a section goes into a ledger with its source (brief, attachment, document, or unsupported). Unsupported claims are underlined like any other note.
 - **Auto-advance:** when a section passes all its checks, the coach says so and offers the weakest remaining section.
+- **⌘K palette** for every action, a first-run tour, Undo after Accept, and a Library that shows each document's readiness and deadline.
 - **Learn the house standard**: derive a document type and style rules from one to three exemplar documents.
 - **Workspace memory** (the coach sees the openings of your other documents and flags contradictions) and **evidence per claim** (attach the file that proves a claim; the ledger and packet show it).
 - **Review packet** export, **Record the real review** (1–5, shown per document and as a workspace average) and **Pull comments from Confluence** into Learn from feedback.
