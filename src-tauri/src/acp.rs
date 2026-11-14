@@ -425,6 +425,28 @@ mod prompts {
     }
 
     #[test] #[ignore]
+    fn draft_document_from_notes_without_slop() {
+        let mut b = body("interview", "Context and problem", vec![user("Draft the document from my notes and the brief: one draft for every section of the template, in order. Where my notes lack a fact, leave a [TODO]. Then list the three gaps I should fill first.")]);
+        b["notes"] = json!("payments api slow at month end. few clients hammer it (3 of 240 send ~70%, from the grafana board). p99 200ms -> 2.1s. 3 incidents last q (INC-412, 418, 433). idea: token bucket per client in redis, 500 rps each, 429 + retry-after. redis slow -> fail open. alternatives: do nothing / LB quotas (cant see client id behind gateway key) / scale api ($18k/mo for 2 days). need the 3-node redis cluster approved by friday");
+        b["sections"] = json!([{"title": "Context and problem", "text": ""}, {"title": "Proposed design", "text": ""}, {"title": "Alternatives considered", "text": ""}, {"title": "Failure modes", "text": ""}]);
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let script = root.join("agent/node_modules/@agentclientprotocol/claude-agent-acp/dist/index.js");
+        let workdir = std::env::temp_dir().join("docu-coach-test"); std::fs::create_dir_all(&workdir).unwrap();
+        let node = std::env::var("DOCU_COACH_NODE").unwrap_or_else(|_| "node".into());
+        let acp = super::Acp::start(node.as_ref(), &[script.to_string_lossy().to_string()], &workdir).unwrap();
+        let mut reply = String::new();
+        acp.ask(&prompt::system_for("interview", "document", false), &prompt::build(&b), &[], &super::RunConfig { claude: true, model: "claude-opus-5-5".into(), ..Default::default() }, |t| reply.push_str(t)).unwrap();
+        println!("{reply}");
+        let drafts = tags(&reply, "draft");
+        for sec in ["Context and problem", "Proposed design", "Alternatives considered", "Failure modes"] { assert!(drafts.iter().any(|d| attr(d, "section") == Some(sec)), "no draft for {sec}"); }
+        let low = reply.to_lowercase();
+        for tell in ["\u{2014}", "delve", "leverag", "robust", "seamless", "worth noting", "in conclusion", "not just", "game-chang", "navigate the", "it is important to note", "crucial"] {
+            assert!(!low.contains(tell), "slop tell in draft: {tell:?}");
+        }
+        assert!(low.contains("[todo") || low.contains("todo:"), "thin facts should become TODOs, not guesses");
+    }
+
+    #[test] #[ignore]
     fn thesis_is_written_or_blocked() {
         let reply = turn("interview", "Context and problem", vec![user("Give me the thesis for this document: the bottom line in at most 25 words, the ask, three supporting claims with facts, the strongest counterargument, and what would change your mind. If you cannot without inventing facts, say THESIS BLOCKED and ask me the questions.")]);
         assert!(reply.contains("THESIS BLOCKED") || reply.contains("<draft section=\""), "thesis should end in a draft, or be blocked");

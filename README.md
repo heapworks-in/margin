@@ -10,6 +10,7 @@ A private writing coach for technical documents, as a macOS desktop app. You wri
 - **30-second read:** the coach reads only the title, first paragraph and headings and says what it thinks you are asking for. If that is not your ask, the structure is wrong.
 - **Claims:** every claim and number in a section goes into a ledger with its source (brief, attachment, document, or unsupported). Unsupported claims are underlined like any other note.
 - **Auto-advance:** when a section passes all its checks, the coach says so and offers the weakest remaining section.
+- **Draft the document** from notes: one draft per template section, facts kept exactly, `[TODO]` where a fact is missing, *Use all drafts* in one click. A no-slop rule set governs every draft and fix, and a model-free **Slop** meter in the status bar underlines machine-prose tells (jargon, filler, em dashes, binary contrasts) with plain replacements.
 - **Options table** and **TL;DR** (20-second and 2-minute versions, with a "since the last review" line on re-runs) in interview mode.
 - **Draw:** select a paragraph that describes a flow, press *Draw* in the toolbar, and the coach returns a diagram spec that the app lays out as an editable Excalidraw drawing.
 - **Lessons that teach:** every repeated English rule has a *Teach me* button (three sentences and one exercise); the Lessons popover shows the English-note count per review so you can watch it fall.

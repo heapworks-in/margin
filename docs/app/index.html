@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Margin</title>
 <link href="vendor/fonts/fonts.css" rel="stylesheet">
-<script src="vendor/editor.js?v=60"></script>
+<script src="vendor/editor.js?v=62"></script>
 <style>
 :root{
   color-scheme:dark;
@@ -954,6 +954,7 @@ function syncPaper() {
   notesBox().value = state.notes;
   requestAnimationFrame(() => { grow(title); grow(notesBox()); });
 }
+let slopCount = 0;
 function renderMeta() {
   const n = docWords(), all = sections(), open = state.comments.filter(c => !c.resolved).length;
   const expected = tpl().sections.length, have = tpl().sections.filter(s => all.some(x => x.title.toLowerCase() === s.title.toLowerCase() && x.words)).length;
@@ -965,6 +966,7 @@ function renderMeta() {
     `<span>Page <b>${pages ? pages.toFixed(pages % 1 ? 1 : 0) : '0'}</b></span><span><b>${n.toLocaleString()}</b> ${n === 1 ? 'word' : 'words'}</span><span><b>${mins || '–'}</b> min read</span>` +
     `<span>Sections <b>${have}/${expected}</b> written, <b class="${all.length && ready === all.length ? 'ok' : ''}">${ready}</b> ready</span>` +
     `<span class="${open ? 'warn' : ''}">${open ? `<button type="button" id="notes-btn"><b>${open}</b> open ${open === 1 ? 'note' : 'notes'}</button>` : '<b>0</b> open notes'}</span>` +
+    ((slopCount = slopScan().length) ? `<span><button type="button" id="slop-btn" title="Machine-prose tells: jargon, filler, em dashes, binary contrasts. Click to underline them.">Slop <b class="${slopCount > 5 ? 'verdict revise' : ''}">${slopCount}</b></button></span>` : '') +
     (state.rubric ? `<span><button type="button" id="rubric-btn">Rubric <b>${rubricAvg().toFixed(1)}</b> · <span class="verdict ${state.rubric.verdict === 'SHIP' ? 'ship' : 'revise'}">${esc(state.rubric.verdict || 'REVISE')}</span></button></span>` : '') +
     (state.reader ? `<span><button type="button" id="reader-btn" title="${esc(state.reader.why)}">Reader <b class="verdict ${state.reader.decision === 'yes' ? 'ship' : state.reader.decision === 'no' ? 'revise' : ''}">${{ yes: 'says yes', ask: 'would ask', no: 'says no' }[state.reader.decision]}</b></button></span>` : '') +
     (state.claims.length ? `<span><button type="button" id="claims-btn">Claims <b>${state.claims.length}</b>${state.claims.filter(c => /^unsupported/i.test(c.source)).length ? ` · <span class="verdict revise">${state.claims.filter(c => /^unsupported/i.test(c.source)).length} unsupported</span>` : ''}</button></span>` : '') +
@@ -973,6 +975,7 @@ function renderMeta() {
     `<span class="right"><span>Last review <b>${esc(last)}</b></span><span><button type="button" id="lessons-btn">Lessons${rules ? ` <b>${rules}</b>` : ''}</button></span></span>`;
   $('#lessons-btn').onclick = e => showLessonsPop(e.currentTarget);
   const rb = $('#rubric-btn'); if (rb) rb.onclick = e => showRubricPop(e.currentTarget);
+  const sb = $('#slop-btn'); if (sb) sb.onclick = () => markSlop();
   const cb = $('#claims-btn'); if (cb) cb.onclick = e => showClaimsPop(e.currentTarget);
   const nb = $('#notes-btn'); if (nb) nb.onclick = e => showNotesPop(e.currentTarget);
   const rdb = $('#reader-btn'); if (rdb) rdb.onclick = e => { const pop = $('#pop'); clearTimeout(popTimer); popId = 'reader'; pop.className = 'pop rubric'; pop.replaceChildren(); const head = el('div', { className: 'card-head' }); head.append(el('b', { textContent: 'Your reader, after one read' })); pop.append(head, el('p', { style: 'margin:6px 0 0;font-size:13px;line-height:1.5;color:var(--ink-2)', textContent: state.reader.why }), el('p', { className: 'note', style: 'margin:8px 0 0;font-size:12px;color:var(--faint)', textContent: `Read ${ago(state.reader.at)}. Reader notes in the text show where it was decided.` })); placePop(pop, e.currentTarget); };
@@ -1085,6 +1088,7 @@ const panelNames = () => (tpl().readers || ['Staff peer', 'Skeptical VP', 'Futur
 const ACTIONS = {
   interview: [
     ['Interview me', s => `Interview me for the "${s}" section. Ask me one question at a time.`, 'quick', 'section'],
+    ['Draft the document', () => 'Draft the document from my notes and the brief: one draft for every section of the template, in order. Where my notes lack a fact, leave a [TODO]. Then list the three gaps I should fill first.', 'deep', 'document', true],
     ['Thesis', () => 'Give me the thesis for this document: the bottom line in at most 25 words, the ask, three supporting claims with facts, the strongest counterargument, and what would change your mind. If you cannot without inventing facts, say THESIS BLOCKED and ask me the questions.', 'quick', 'document'],
     ['Options table', () => 'Build the options table with me: ask me for the alternatives (including doing nothing), the criteria the reader cares about, and how each option scores, one question at a time. Then write the table.', 'quick', 'document'],
     ['TL;DR', () => `Write the TL;DR for this document${state.comments.some(c => c.resolved) ? ', and say what changed since the last review' : ''}.`, 'quick', 'document'],
@@ -1242,6 +1246,11 @@ function fillMsg(d, m) {
   if (text) nodes.push(md(text));
   if (!m.done) nodes.push(typing(/<(note|draft)\b/.test(m.content.slice(-400)) ? 'Writing a comment' : m.content.trim() ? 'Writing' : 'Thinking', m.since));
   else if (m.added) { const a = el('button', { className: 'added', type: 'button', innerHTML: `${m.added} note${m.added === 1 ? '' : 's'} added to the document →` }); a.onclick = () => { showView('doc'); const first = state.comments.find(c => !c.resolved); if (first) activate(first.id, true); }; nodes.push(a); }
+  if (m.done && m.drafts && m.drafts.length >= 2) {
+    const ds = m.drafts.map(id => state.comments.find(c => c.id === id)).filter(Boolean);
+    const left = ds.filter(c => !c.used);
+    if (left.length) { const all = el('button', { className: 'added', type: 'button', textContent: `Use all ${ds.length} drafts \u2192` }); all.onclick = () => useAllDrafts(ds); nodes.push(all); }
+  }
   if (m.done) nodes.push(stamp(m));
   d.replaceChildren(...nodes.filter(Boolean));
 }
@@ -1257,6 +1266,65 @@ function renderLog() {
   if (!state.chat.length) log.append(welcome());
   for (const m of state.chat) { if (m.hidden) continue; const d = el('div', { className: 'msg ' + m.role }); fillMsg(d, m); log.append(d); }
   log.scrollTop = log.scrollHeight;
+}
+
+/** Put every draft into its section: empty sections are filled, written ones get the draft appended so nothing is lost. */
+function useAllDrafts(ds) {
+  for (const c of ds) {
+    if (c.used) continue;
+    const had = sectionText(c.section).trim();
+    c.used = { before: sectionText(c.section) };
+    putText(c.section, c.body, had ? 'append' : 'replace');
+  }
+  save(); renderOutline(); renderMeta(); renderLog(); showView('doc');
+  const first = ds[0]; if (first) doc.reveal(first.section);
+  const n = slopScan().length; if (n) flashStatus(`${n} slop ${n === 1 ? 'tell' : 'tells'} in the draft: see the status bar`);
+}
+function flashStatus(text) { const s = $('#saved'); if (!s) return; const was = s.textContent; s.textContent = text; s.classList.add('show'); clearTimeout(savedTimer); savedTimer = setTimeout(() => { s.classList.remove('show'); s.textContent = was; }, 3500); }
+
+/* ---------- slop meter: machine-prose tells, found without a model ---------- */
+const SLOP_WORDS = [
+  ['utilize', 'use'], ['utilise', 'use'], ['utilizes', 'uses'], ['utilizing', 'using'], ['leverage', 'use'], ['leverages', 'uses'], ['leveraging', 'using'], ['leveraged', 'used'],
+  ['delve into', 'look at'], ['delve', 'look'], ['robust', ''], ['seamless', ''], ['seamlessly', ''], ['navigate the', 'handle the'], ['unpack', 'explain'], ['deep dive', 'analysis'], ['game-changer', ''], ['game changer', ''],
+  ['double down', 'commit'], ['moving forward', 'next'], ['circle back', 'return to'], ['landscape', 'situation'], ['holistic', 'whole'], ['synergy', ''], ['empowers', 'lets'], ['empower', 'let'], ['unlocks', 'allows'], ['unlock', 'allow'],
+  ['harness', 'use'], ['streamline', 'simplify'], ['elevate', 'improve'], ['crucial', 'important'], ['pivotal', 'important'], ['paramount', 'important'], ['ever-evolving', 'changing'], ['realm', 'area'], ['a testament to', 'shows'], ['testament to', 'shows'], ['tapestry', ''],
+  ['a myriad of', 'many'], ['myriad', 'many'], ['a plethora of', 'many'], ['plethora', 'many'], ["in today's", ''], ['at the end of the day', ''], ['when it comes to', 'for'], ['it is important to note that', ''], ["it's important to note that", ''], ["it's worth noting that", ''], ['it is worth noting that', ''], ["it's worth noting", ''], ['it is worth noting', ''],
+  ["here's the thing", ''], ['let me be clear', ''], ['in conclusion', ''], ['furthermore', 'also'], ['moreover', 'also'], ['additionally', 'also'], ['in order to', 'to'], ['due to the fact that', 'because'], ['the fact that', ''], ['this matters because', ''], ['make no mistake', ''], ['let that sink in', ''], ['at its core', ''],
+  ['really', ''], ['actually', ''], ['genuinely', ''], ['truly', ''], ['deeply', ''], ['simply', ''], ['fundamentally', ''], ['importantly', ''], ['crucially', ''], ['literally', ''], ['honestly', ''], ['interestingly', ''], ['inherently', ''], ['inevitably', ''],
+];
+const SLOP_SHAPES = [
+  [/\u2014/g, 'em dash', ', ', 'A comma, a period or a new sentence.'],
+  [/\bnot (only|just|merely) \b[^.?!]{1,60}?\bbut (also )?/gi, 'binary contrast', null, 'State the second thing directly.'],
+  [/\bthe (question|answer|problem|point|issue) (isn\u2019t|isn't|is not) \b/gi, 'binary contrast', null, 'Say what it is.'],
+  [/\bnot because \b/gi, 'binary contrast', null, 'State the reason.'],
+  [/\bit (is|\u2019s|'s) (not|no longer) (about|just|only) \b/gi, 'binary contrast', null, 'Say what it is about.'],
+  [/\b(always|never|everyone|nobody|every single)\b/gi, 'lazy extreme', null, 'A number or a case beats a sweeping word.'],
+];
+function slopScan() {
+  const out = [];
+  for (const sec of sections()) {
+    const text = sec.text || '';
+    for (const [w, fix] of SLOP_WORDS) {
+      const re = new RegExp('(^|[^A-Za-z-])(' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/'/g, "['\u2019]") + ')(?=$|[^A-Za-z-])', 'gi');
+      let m; while ((m = re.exec(text))) { out.push({ section: sec.title, quote: m[2], rule: 'ai slop', fix: fix, body: fix ? `Plain words carry more trust: \u201c${fix}\u201d.` : 'Filler. Cut it; the sentence loses nothing.' }); if (out.length > 60) return out; }
+    }
+    for (const [re, rule, fix, body] of SLOP_SHAPES) { re.lastIndex = 0; let m; while ((m = re.exec(text))) { out.push({ section: sec.title, quote: m[0], rule, fix, body }); } }
+  }
+  return out;
+}
+/** Underline every tell as a note the writer can Accept or dismiss. Re-running replaces the previous set. */
+function markSlop() {
+  for (const c of state.comments.filter(c => c.slop && !c.resolved)) { if (c.anchored) doc.unannotate(c.id); }
+  state.comments = state.comments.filter(c => !c.slop);
+  let n = 0;
+  for (const h of slopScan()) {
+    const c = { id: uid(), kind: h.fix != null ? 'english' : 'structure', quote: h.quote, fix: h.fix || '', rule: h.rule, persona: '', severity: 'low', section: h.section, body: h.body, resolved: false, at: Date.now(), slop: true };
+    c.anchored = !!doc.annotate(c.id, c.kind, c.quote, c.section);
+    if (c.anchored) { state.comments.push(c); n++; }
+  }
+  save(); renderComments();
+  const first = state.comments.find(c => c.slop && !c.resolved); if (first) { activate(first.id, true); showPop(first.id); }
+  return n;
 }
 
 /* ---------- comment rail ---------- */
@@ -1454,7 +1522,7 @@ document.addEventListener('mouseover', e => {
   clearTimeout(popTimer); popTimer = setTimeout(hidePop, 300);
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') hidePop(); });
-document.addEventListener('mousedown', e => { if (!e.target.closest('#pop') && !e.target.closest('.hbadge') && !e.target.closest('mark[data-comment]') && !e.target.closest('#lessons-btn') && !e.target.closest('#rubric-btn') && !e.target.closest('#claims-btn') && !e.target.closest('#history-btn') && !e.target.closest('#reader-btn') && !e.target.closest('#notes-btn')) hidePop(); });
+document.addEventListener('mousedown', e => { if (!e.target.closest('#pop') && !e.target.closest('.hbadge') && !e.target.closest('mark[data-comment]') && !e.target.closest('#lessons-btn') && !e.target.closest('#rubric-btn') && !e.target.closest('#claims-btn') && !e.target.closest('#history-btn') && !e.target.closest('#reader-btn') && !e.target.closest('#notes-btn') && !e.target.closest('#slop-btn')) hidePop(); });
 $('#scroll').addEventListener('scroll', hidePop, { passive: true });
 function toggleResolved(c) {
   c.resolved = !c.resolved;
@@ -1531,6 +1599,7 @@ async function send(text, opts = {}) {
   // Ground the review: notes that quoted words not in the document go back once for correction.
   unfound = state.comments.slice(before).filter(c => c.kind !== 'draft' && c.quote && !c.anchored);
   m.unfound = unfound.length;
+  m.drafts = state.comments.slice(before).filter(c => c.kind === 'draft').map(c => c.id);
   } catch (e) { console.error('after the reply', e); m.content += `\n\n(The reply could not be placed: ${e.message || e})`; }
   fillMsg(d, m);
   setBusy(false);
@@ -1559,7 +1628,9 @@ async function mockCoach(text, emit) {
   const sec = state.current, body = sectionText(sec).replace(/^\s*([-*+]|\d+\.)\s+/gm, '').replace(/[*_`#>\[\]]/g, '');
   const w = body.split(/\s+/).filter(Boolean);
   const q1 = w.slice(0, 6).join(' '), q2 = w.slice(-4).join(' ');
-  const reply = /interview/i.test(text)
+  const reply = /Draft the document from my notes/.test(text)
+        ? `Here is a first draft from your notes. Three gaps to fill first: the client names, the Redis cluster cost, and who owns the rollout.\n\n${tpl().sections.slice(0, 4).map(s => `<draft section="${s.title}">${s.title === 'Context and problem' ? 'Three of 240 clients send about 70% of Payments API traffic at month end. p99 latency rises from 200 ms to 2.1 s for every client, and the on-call engineer throttles by hand. Three incidents last quarter (INC-412, INC-418, INC-433) came from this.' : s.title === 'Proposed design' ? 'A per-client token bucket in Redis gives each client 500 requests per second. The API gateway checks the bucket and answers 429 with Retry-After when it is empty. If Redis is slow, the limiter fails open. [TODO: Redis timeout before failing open]' : `[TODO: ${s.hint}]`}</draft>`).join('\n')}`
+      : /interview/i.test(text)
     ? `Let us start with the "${sec}" section.\n\nWhen this is done, what will be true that is not true today? One sentence is enough. For example: "No single client can slow down the others."`
     : w.length < 4
       ? `The "${sec}" section is empty, so there is nothing to review yet. Write two or three sentences and I will go through them.\n\n<note type="missing">${hintFor(sec) || 'What should a reader learn from this section?'}</note>`
