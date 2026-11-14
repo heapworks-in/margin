@@ -499,7 +499,7 @@ function handle(editor, host) {
     const r = dom.getBoundingClientRect(), h = host.getBoundingClientRect()
     const line = Math.min(parseFloat(getComputedStyle(dom).lineHeight) || 24, r.height)
     el.style.top = r.top - h.top + (line - 24) / 2 + 'px'
-    el.style.left = r.left - h.left - 46 + 'px'
+    el.style.left = r.left - h.left - 88 + 'px' // outer half of the gutter; the inner half is for placing the caret
     el.hidden = false
   }
   const scroller = host.closest('.scroll') || host.parentElement

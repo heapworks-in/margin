@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Margin</title>
 <link href="vendor/fonts/fonts.css" rel="stylesheet">
-<script src="vendor/editor.js?v=58"></script>
+<script src="vendor/editor.js?v=60"></script>
 <style>
 :root{
   color-scheme:dark;
@@ -261,7 +261,7 @@ button:disabled{opacity:.45;cursor:default}
 .desk{flex:1;min-height:0;display:flex;flex-direction:column}
 .scroll{flex:1;overflow:auto}
 .sheet-wrap{max-width:1240px;margin:0 auto;padding:48px 48px 300px 84px}
-.page{width:100%;padding:0 0 120px 44px}
+.page{width:100%;padding:0 0 120px 92px}
 .page[hidden]{display:none}
 .doc-title{display:block;font:700 39px/1.15 var(--ui);letter-spacing:-.025em;border:0;width:100%;outline:none;background:none;color:var(--ink);padding:0;margin:0 0 18px;resize:none;overflow:hidden}
 .doc-title::placeholder{color:#4A4F58}
@@ -878,7 +878,7 @@ const tplChecks = t => (tplSection(t)?.checks || '').split(/,\s*/).filter(Boolea
 const sections = () => doc ? doc.sections() : [];
 const titles = () => [NOTES, ...sections().map(s => s.title)];
 const notesBox = () => $('#notes-box');
-const grow = (ta, max = Infinity) => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, max) + 'px'; };
+const grow = (ta, max = Infinity) => { const sc = ta.closest('.scroll'), st = sc ? sc.scrollTop : 0; ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, max) + 'px'; if (sc) sc.scrollTop = st; };
 const docWords = () => sections().reduce((n, s) => n + s.words, 0);
 const firstSection = () => titles()[1] || tpl().sections[0]?.title || NOTES;
 
@@ -915,7 +915,15 @@ function buildPaper() {
   more.onclick = () => { brief.hidden = !brief.hidden; more.textContent = brief.hidden ? 'Brief ▾' : 'Brief ▴'; };
   aud.append(more);
   p.append(title, aud, brief, el('p', { className: 'doc-sub', id: 'doc-sub' }), host);
-  p.onmousedown = e => { if (e.target === p) { e.preventDefault(); doc.editor.commands.focus('end'); } };
+  // A click on the paper around the text (gutters, above the first block, below the last) puts the caret at the nearest text, not at the end.
+  p.onmousedown = e => {
+    if (e.target !== p) return;
+    e.preventDefault();
+    const v = doc.editor.view, r = v.dom.getBoundingClientRect();
+    const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+    const hit = v.posAtCoords({ left: clamp(e.clientX, r.left + 2, r.right - 2), top: clamp(e.clientY, r.top + 2, r.bottom - 2) });
+    if (hit) doc.editor.chain().focus().setTextSelection(hit.pos).run(); else doc.editor.commands.focus(e.clientY < r.top ? 'start' : 'end');
+  };
 
   const ta = el('textarea', { className: 'notes-box', id: 'notes-box', placeholder: 'Rough notes, a messy draft, a Slack thread, bullet points…' });
   ta.setAttribute('aria-label', NOTES);
