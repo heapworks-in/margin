@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Margin</title>
 <link href="vendor/fonts/fonts.css" rel="stylesheet">
-<script src="vendor/editor.js?v=66"></script>
+<script src="vendor/editor.js?v=67"></script>
 <style>
 :root{
   color-scheme:dark;
@@ -402,6 +402,7 @@ mark.c-mark.active{box-shadow:0 0 0 2px var(--accent-soft);filter:saturate(1.4)}
 #notes-btn{background:none;border:0;color:inherit;font:inherit;padding:0;cursor:pointer}
 .lrow small{color:var(--muted);white-space:nowrap}
 .lrow.bad small{color:var(--fact)}
+.lrow .evidence{font:11.5px var(--ui);background:var(--raise);color:var(--ink-2);border:1px solid var(--line-strong);border-radius:6px;padding:1px 4px;max-width:140px}
 .lesson .teach{grid-column:2;justify-self:start;background:none;border:1px solid var(--line-strong);color:var(--accent-ink);border-radius:999px;padding:1px 8px;font-size:11.5px;cursor:pointer;margin-top:2px}
 .modal .box.wide{width:min(900px,calc(100vw - 40px));max-width:calc(100vw - 40px);min-width:0;overflow:hidden}
 .diff{max-height:60vh;overflow:auto;overflow-wrap:anywhere;word-break:break-all;background:var(--canvas);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:0;font:12.5px/1.5 var(--mono);white-space:pre-wrap}
@@ -762,6 +763,7 @@ const store = inApp ? {
   models: agentId => invoke('agent_models', { agentId: agentId || null }),
   style: { get: () => invoke('style_get'), set: text => invoke('style_set', { text }) },
   templates: { get: () => invoke('templates_get'), set: value => invoke('templates_set', { value }) },
+  digest: exclude => invoke('workspace_digest', { exclude }),
   feedback: { get: () => invoke('feedback_get'), set: text => invoke('feedback_set', { text }) },
   history: { snapshot: (id, markdown, label) => invoke('doc_snapshot', { id, markdown, label }), list: id => invoke('history_list', { id }), read: (id, name) => invoke('history_read', { id, name }) },
   publish: (parentUrl, title, html, email, token, pageId) => invoke('confluence_publish', { parentUrl, title, html, email, token, pageId: pageId || null }),
@@ -783,6 +785,7 @@ const store = inApp ? {
   library: { load: async () => JSON.parse(localStorage.getItem('docu-coach-library') || '[]'), save: async items => localStorage.setItem('docu-coach-library', JSON.stringify(items)) },
   style: { get: async () => localStorage.getItem('docu-coach-style') || '', set: async text => localStorage.setItem('docu-coach-style', text) },
   templates: { get: async () => JSON.parse(localStorage.getItem('docu-coach-templates') || '{}'), set: async value => localStorage.setItem('docu-coach-templates', JSON.stringify(value)) },
+  digest: async () => '',
   feedback: { get: async () => localStorage.getItem('docu-coach-feedback') || '', set: async text => localStorage.setItem('docu-coach-feedback', text) },
   history: { _k: id => 'docu-coach-history:' + id, snapshot: async function (id, markdown, label) { const l = JSON.parse(localStorage.getItem(this._k(id)) || '[]'); const name = `${Date.now()}-${label}.md`; l.unshift({ name, markdown, updated: Date.now(), size: markdown.length }); localStorage.setItem(this._k(id), JSON.stringify(l.slice(0, 20))); return name; }, list: async function (id) { return JSON.parse(localStorage.getItem(this._k(id)) || '[]').map(({ name, updated, size }) => ({ name, updated, size })); }, read: async function (id, name) { return (JSON.parse(localStorage.getItem(this._k(id)) || '[]').find(h => h.name === name) || {}).markdown || ''; } },
   publish: async () => { throw new Error('Publishing works in the app.'); },
@@ -1299,7 +1302,7 @@ function reviewPacket() {
   lines.push('## Ship checks'); for (const c of shipChecks()) lines.push(`- [${c.ok ? 'x' : ' '}] ${c.label} (${c.detail})`); lines.push('');
   if (state.rubric) { lines.push(`## Panel rubric: ${rubricAvg().toFixed(1)} \u00b7 ${state.rubric.verdict}`, '', '| Dimension | Score | Evidence |', '|---|---|---|'); for (const d of RUBRIC) { const sc = state.rubric.scores[d]; if (sc) lines.push(`| ${d} | ${sc.value} | ${sc.note.replace(/\|/g, '/')} |`); } lines.push(''); }
   if (state.reader) lines.push('## Reader', `${{ yes: 'Says yes', ask: 'Would ask first', no: 'Says no' }[state.reader.decision]}: ${state.reader.why}`, '');
-  if (state.claims.length) { lines.push('## Claims and sources', '', '| Claim | Source |', '|---|---|'); for (const c of state.claims) lines.push(`| ${c.quote.replace(/\|/g, '/')} | ${c.source} |`); lines.push(''); }
+  if (state.claims.length) { lines.push('## Claims and sources', '', '| Claim | Source |', '|---|---|'); for (const c of state.claims) lines.push(`| ${c.quote.replace(/\|/g, '/')} | ${c.evidence ? 'file: ' + c.evidence : c.source} |`); lines.push(''); }
   const open = state.comments.filter(c => !c.resolved && c.kind !== 'draft');
   if (open.length) { lines.push(`## Open notes (${open.length})`); const by = {}; for (const c of open) (by[c.section || 'Document'] ||= []).push(c); for (const [sec, list] of Object.entries(by)) { lines.push(`### ${sec}`); for (const c of list) lines.push(`- **${KIND_SHORT[c.kind]}**${c.persona ? ` (${c.persona})` : ''}${c.quote ? ` \u201c${c.quote}\u201d:` : ':'} ${c.body}`); } lines.push(''); }
   if (state.outcome) lines.push('## Real review', `Outcome ${state.outcome.score}/5${state.outcome.note ? ': ' + state.outcome.note : ''}`, '');
@@ -1349,6 +1352,14 @@ async function pullConfluenceComments(ta, urlInput, status) {
     ta.value = list.map(c => `- ${c.kind === 'inline' && c.on ? `On \u201c${c.on.slice(0, 80)}\u201d: ` : ''}${c.text}`).join('\n');
     status.textContent = `${list.length} comment${list.length === 1 ? '' : 's'} pulled. Edit if you like, then Compare and learn.`;
   } catch (e) { status.textContent = String(e.message || e); }
+}
+
+/** Mark a claim as backed by an attached file: its source changes, its underline goes, the ledger and the gate update. */
+function attachEvidence(claim, name) {
+  claim.source = 'attachment:' + name; claim.evidence = name;
+  const n = state.comments.find(x => x.id === claim.id);
+  if (n && !n.resolved) { n.resolved = true; n.body = `Backed by ${name}.`; if (n.anchored) { doc.unannotate(n.id); n.anchored = false; } }
+  save(); renderComments();
 }
 
 /* ---------- ship gate: is this document ready to leave the room? ---------- */
@@ -1550,8 +1561,22 @@ function showClaimsPop(anchor) {
   pop.className = 'pop rubric'; pop.replaceChildren();
   const head = el('div', { className: 'card-head' }); head.append(el('b', { textContent: 'Claim ledger' })); pop.append(head);
   const t = el('div', { className: 'ledger' });
-  for (const c of state.claims) { const row = el('div', { className: 'lrow ' + (/^unsupported/i.test(c.source) ? 'bad' : '') }); row.append(el('span', { className: 'q', textContent: '“' + c.quote + '”' }), el('small', { textContent: c.source })); row.onclick = () => { const n = state.comments.find(x => x.id === c.id); if (n) activate(n.id, true); }; t.append(row); }
-  pop.append(t, el('p', { className: 'note', style: 'margin:8px 0 0;font-size:12px;color:var(--faint)', textContent: 'Unsupported claims are underlined in the text. Give them a source, or mark them as assumptions.' }));
+  for (const c of state.claims) {
+    const row = el('div', { className: 'lrow ' + (/^unsupported/i.test(c.source) ? 'bad' : '') });
+    row.append(el('span', { className: 'q', textContent: '\u201c' + c.quote + '\u201d' }), el('small', { textContent: c.source }));
+    row.onclick = () => { const n = state.comments.find(x => x.id === c.id); if (n) activate(n.id, true); };
+    if (/^unsupported/i.test(c.source)) {
+      const ev = el('select', { className: 'evidence', title: 'Attach the evidence for this claim' });
+      ev.append(el('option', { value: '', textContent: 'Evidence\u2026' }));
+      for (const a of state.attachments) ev.append(el('option', { value: a.name, textContent: a.name }));
+      ev.append(el('option', { value: '__file__', textContent: 'Add a file\u2026' }));
+      ev.onclick = e => e.stopPropagation();
+      ev.onchange = async e => { e.stopPropagation(); if (ev.value === '__file__') { const fs = await pickFiles({ multiple: false }); if (fs[0]) { await addFiles(fs); attachEvidence(c, fs[0].name); } } else if (ev.value) attachEvidence(c, ev.value); showClaimsPop(anchor); };
+      row.append(ev);
+    }
+    t.append(row);
+  }
+  pop.append(t, el('p', { className: 'note', style: 'margin:8px 0 0;font-size:12px;color:var(--faint)', textContent: 'Unsupported claims are underlined in the text. Attach the file that proves one, or mark it as an assumption in the text.' }));
   placePop(pop, anchor);
 }
 async function showHistoryPop(anchor) {
@@ -1682,6 +1707,7 @@ function payload(opts = {}) {
   const sendFiles = !!opts.withFiles || named || tier === 'deep' && scope === 'document';
   return {
     tier, scope,
+    workspace: tier === 'deep' && scope === 'document' ? workspaceDigest : '',
     mode: state.mode, current: state.current, title: state.title, notes: state.notes, audience: state.audience || '', purpose: state.purpose || '', brief: state.brief || {}, style: styleRules || DEFAULT_STYLE,
     attachments: sendFiles ? state.attachments.map(a => a.kind === 'image' ? { name: a.name, kind: 'image', mime: a.mime, data: images[a.id] || '' } : { name: a.name, kind: a.kind, text: a.text || '' }).filter(a => a.kind !== 'image' || a.data) : [],
     template: { name: tpl().name, sections: tpl().sections },
@@ -1795,8 +1821,10 @@ async function openDoc(id) {
   if (!titles().includes(state.current) && !tpl().sections.some(x => x.title === state.current)) state.current = firstSection();
   renderAll();
   showView('doc');
-  warmCoach();
+  warmCoach(); refreshDigest();
 }
+let workspaceDigest = '';
+async function refreshDigest() { try { workspaceDigest = state.id ? (await store.digest(state.id)) || '' : ''; } catch { workspaceDigest = ''; } }
 let warmedAt = 0;
 function warmCoach(force) { if (!inApp) return; if (!force && Date.now() - warmedAt < 10 * 60000) return; warmedAt = Date.now(); window.__TAURI__.core.invoke('warm').catch(() => {}); }
 async function createDoc(title, templateId) {

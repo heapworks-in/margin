@@ -465,6 +465,18 @@ mod prompts {
     }
 
     #[test] #[ignore]
+    fn workspace_memory_flags_a_contradiction() {
+        let who = "Staff peer (attacks technical soundness); Future maintainer (attacks missing context); Implementing engineer (attacks ambiguity)";
+        let mut b = body("review", "Proposed design", vec![user(&format!("Review the whole document as a panel of three independent reviewers: {who}. Give every note a persona attribute. Then score the rubric and give a verdict. Quote the exact words for every note."))]);
+        b["sections"][1]["text"] = json!("We propose a per-client token bucket stored in DynamoDB. Each client gets 500 requests per second, refilled continuously. The limiter sits in the API gateway and answers 429 with a Retry-After header.");
+        b["workspace"] = json!("<doc title=\"ADR-12: Postgres for operational state\">Status: accepted, 2026-09-02. Decision: all operational state for the Payments platform lives in Postgres; no new DynamoDB tables. Consequences: one backup story, one on-call runbook.</doc>");
+        let reply = turn_with("review", &b);
+        let low = reply.to_lowercase();
+        assert!(low.contains("adr-12") || low.contains("postgres"), "the panel should notice the DynamoDB choice contradicts ADR-12");
+        grounded_in(&reply, "note", &format!("{CONTEXT}\n{}\n{ALTS}", b["sections"][1]["text"].as_str().unwrap()));
+    }
+
+    #[test] #[ignore]
     fn thesis_is_written_or_blocked() {
         let reply = turn("interview", "Context and problem", vec![user("Give me the thesis for this document: the bottom line in at most 25 words, the ask, three supporting claims with facts, the strongest counterargument, and what would change your mind. If you cannot without inventing facts, say THESIS BLOCKED and ask me the questions.")]);
         assert!(reply.contains("THESIS BLOCKED") || reply.contains("<draft section=\""), "thesis should end in a draft, or be blocked");

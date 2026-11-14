@@ -174,6 +174,21 @@
     ok('status bar shows Ship', /Ship/.test(document.querySelector('#status').textContent));
   });
 
+  await step('claim evidence and workspace digest', async () => {
+    const un = state.claims.find(c => /^unsupported/i.test(c.source));
+    ok('an unsupported claim exists to test with', !!un);
+    if (un) {
+      const note = state.comments.find(x => x.id === un.id);
+      attachEvidence(un, 'spec.txt');
+      ok('claim becomes sourced by the file', un.source === 'attachment:spec.txt' && (!note || note.resolved));
+      ok('gate counts it as sourced', shipChecks()[1].detail !== '1 unsupported');
+    }
+    workspaceDigest = '<doc title="ADR-12">We chose Postgres.</doc>';
+    ok('deep whole-document turns carry the digest', payload({ tier: 'deep', scope: 'document' }).workspace.includes('ADR-12'));
+    ok('quick turns do not', payload({ tier: 'quick', scope: 'section' }).workspace === '');
+    workspaceDigest = '';
+  });
+
   await step('review packet and outcome', async () => {
     const pk = reviewPacket();
     ok('packet has brief, checks, rubric, claims and the document', ['## Brief', '## Ship checks', '## Panel rubric', '## Claims and sources', '## Context and problem'].every(h => pk.includes(h)));

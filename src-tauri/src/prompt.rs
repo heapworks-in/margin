@@ -62,6 +62,8 @@ fn render_context(body: &Value) -> String {
         .map(|n| format!("<note id=\"{}\" type=\"{}\" section=\"{}\" quote=\"{}\">{}</note>", s(&n["id"]), s(&n["kind"]), s(&n["section"]), s(&n["quote"]), s(&n["body"])))
         .collect();
     let earlier = if earlier.is_empty() { String::new() } else { format!("\n<earlier_notes>\n{}\n</earlier_notes>", earlier.join("\n")) };
+    let ws = s(&body["workspace"]).trim();
+    let earlier = if ws.is_empty() { earlier } else { format!("{earlier}\n<workspace>\n{}\n</workspace>", ws.chars().take(9000).collect::<String>()) };
     format!(
         "<template name=\"{}\">\n{}\n</template>\n{}\n<document title=\"{}\">\n<raw_notes>\n{}\n</raw_notes>\n{}\n</document>{}\n<current_section>{}</current_section>\n<mode>{}</mode>",
         s(&tpl["name"]), guide.join("\n"), audience, title, or_empty(s(&body["notes"])), sections.join("\n"), earlier, s(&body["current"]), mode
@@ -134,6 +136,14 @@ mod tests {
         assert!(p.contains("<section title=\"A\" omitted=\"yes\"/>") && p.contains("new text"));
         assert!(p.contains("<earlier_notes>") && p.contains("id=\"n1\""));
         assert!(system_for("review", "changed", false).contains("marked omitted"));
+    }
+
+    #[test]
+    fn workspace_digest_is_rendered_when_present() {
+        let body = json!({"workspace": "<doc title=\"ADR-12\">We chose Postgres.</doc>", "current": "A", "sections": [{"title": "A", "text": "x"}], "template": {"name": "t", "sections": []}, "history": [{"role": "user", "content": "x"}]});
+        assert!(build(&body).contains("<workspace>\n<doc title=\"ADR-12\">"));
+        let none = json!({"current": "A", "sections": [], "template": {"name": "t", "sections": []}, "history": [{"role": "user", "content": "x"}]});
+        assert!(!build(&none).contains("<workspace>"));
     }
 
     #[test]

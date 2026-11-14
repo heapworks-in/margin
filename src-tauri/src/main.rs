@@ -519,6 +519,27 @@ fn library_save(app: AppHandle, json: String) -> Result<(), String> {
 }
 
 /// House style rules for the workspace (style.md), applied in every review.
+/// The openings of the other documents in the workspace, for consistency checks. Capped so it costs little.
+#[tauri::command]
+fn workspace_digest(app: AppHandle, exclude: String) -> Result<String, String> {
+    let mut out = String::new();
+    let mut entries: Vec<_> = std::fs::read_dir(workspace(&app)?.join("documents")).map_err(|e| e.to_string())?.flatten().collect();
+    entries.sort_by_key(|e| std::cmp::Reverse(e.metadata().and_then(|m| m.modified()).ok()));
+    for entry in entries {
+        let id = entry.file_name().to_string_lossy().to_string();
+        if id == exclude { continue; }
+        let Ok(md) = std::fs::read_to_string(entry.path().join("document.md")) else { continue };
+        let mut lines = md.lines();
+        let title = lines.next().unwrap_or("").trim_start_matches('#').trim().to_string();
+        let body: String = lines.filter(|l| !l.trim().is_empty()).map(|l| l.trim()).collect::<Vec<_>>().join(" ");
+        if title.is_empty() || body.is_empty() { continue; }
+        let opening: String = body.chars().take(700).collect();
+        out.push_str(&format!("<doc title=\"{}\">{}</doc>\n", title.replace('"', "'"), opening));
+        if out.len() > 8000 { break; }
+    }
+    Ok(out)
+}
+
 /// Custom document types (templates.json in the workspace), shared with the team through the folder.
 #[tauri::command]
 fn templates_get(app: AppHandle) -> Result<serde_json::Value, String> {
@@ -734,7 +755,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(Coach::default())
-        .invoke_handler(tauri::generate_handler![ask, save_markdown, extract_pdf, ws_info, ws_use, ws_forget, reveal, docs_list, doc_create, doc_load, doc_save, doc_delete, asset_save, diagrams_list, diagram_save, diagram_load, diagram_delete, files_list, file_add, file_read, file_delete, library_load, library_save, confluence_fetch, confluence_comments, settings_get, settings_set, agents_discover, agent_models, read_files, warm, style_get, style_set, templates_get, templates_set, feedback_get, feedback_set, doc_snapshot, history_list, history_read, confluence_publish])
+        .invoke_handler(tauri::generate_handler![ask, save_markdown, extract_pdf, ws_info, ws_use, ws_forget, reveal, docs_list, doc_create, doc_load, doc_save, doc_delete, asset_save, diagrams_list, diagram_save, diagram_load, diagram_delete, files_list, file_add, file_read, file_delete, library_load, library_save, confluence_fetch, confluence_comments, settings_get, settings_set, agents_discover, agent_models, read_files, warm, style_get, style_set, workspace_digest, templates_get, templates_set, feedback_get, feedback_set, doc_snapshot, history_list, history_read, confluence_publish])
         .run(tauri::generate_context!())
         .expect("error while running Margin");
 }
