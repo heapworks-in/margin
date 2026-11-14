@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Margin</title>
 <link href="vendor/fonts/fonts.css" rel="stylesheet">
-<script src="vendor/editor.js?v=62"></script>
+<script src="vendor/editor.js?v=63"></script>
 <style>
 :root{
   color-scheme:dark;
@@ -2433,6 +2433,7 @@ async function demo(scene) {
 (async () => {
   const scene = !inApp && new URLSearchParams(location.search).get('demo');
   if (scene) { try { await demo(scene); } catch (e) { console.error('demo', e); } return; }
+  if (!inApp && new URLSearchParams(location.search).has('selftest')) { localStorage.clear(); const t = document.createElement('script'); t.src = 'selftest.js'; document.body.append(t); return; }
   const last = localStorage.getItem(LAST);
   if (last) { try { await openDoc(last); return; } catch {} }
   const docs = await store.list().catch(() => []);
