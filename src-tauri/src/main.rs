@@ -650,6 +650,44 @@ async fn confluence_publish(parent_url: String, title: String, html: String, ema
     .map_err(|e| e.to_string())?
 }
 
+/// Comments on a Confluence page (footer and inline), as plain text lines, for Learn from feedback.
+#[tauri::command]
+async fn confluence_comments(url: String, email: String, token: String) -> Result<Vec<serde_json::Value>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let u = reqwest::Url::parse(url.trim()).map_err(|_| "That is not a valid page link.".to_string())?;
+        let segs: Vec<&str> = u.path_segments().map(|s| s.collect()).unwrap_or_default();
+        let id = segs.iter().position(|s| *s == "pages").and_then(|i| segs.get(i + 1)).map(|s| s.to_string())
+            .filter(|s| !s.is_empty() && s.chars().all(|c| c.is_ascii_digit()))
+            .ok_or("Cannot find a page id in that link. Use the page URL from your browser (it contains /pages/<id>/).")?;
+        let base = format!("{}://{}", u.scheme(), u.host_str().unwrap_or_default());
+        let client = reqwest::blocking::Client::builder().timeout(std::time::Duration::from_secs(30)).build().map_err(|e| e.to_string())?;
+        let strip = |html: &str| -> String {
+            let mut out = String::new(); let mut tag = false;
+            for ch in html.chars() { match ch { '<' => tag = true, '>' => { tag = false; out.push(' '); } _ if !tag => out.push(ch), _ => {} } }
+            out.replace("&nbsp;", " ").replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").split_whitespace().collect::<Vec<_>>().join(" ")
+        };
+        let mut out = Vec::new();
+        for kind in ["footer-comments", "inline-comments"] {
+            let api = format!("{base}/wiki/api/v2/pages/{id}/{kind}?body-format=storage&limit=100");
+            let res = client.get(&api).basic_auth(email.trim(), Some(token.trim())).header("Accept", "application/json").send().map_err(|e| format!("Could not reach Confluence: {e}"))?;
+            let status = res.status();
+            if status.as_u16() == 401 || status.as_u16() == 403 { return Err("Confluence refused the login. Check the email and the API token.".into()); }
+            if status.as_u16() == 404 { return Err("Confluence did not find that page with this account.".into()); }
+            if !status.is_success() { return Err(format!("Confluence answered {status} for {kind}.")); }
+            let v: serde_json::Value = res.json().map_err(|e| e.to_string())?;
+            for c in v["results"].as_array().cloned().unwrap_or_default() {
+                let text = strip(c["body"]["storage"]["value"].as_str().unwrap_or(""));
+                if text.is_empty() { continue; }
+                let on = c["properties"]["inline-original-selection"].as_str().map(strip).unwrap_or_default();
+                out.push(serde_json::json!({ "text": text, "on": on, "kind": if kind == "inline-comments" { "inline" } else { "comment" }, "at": c["version"]["createdAt"] }));
+            }
+        }
+        Ok(out)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /* ---------- import from Confluence ---------- */
 /// Fetches a Confluence Cloud page as export HTML. `url` is the page link; `email` + `token` an Atlassian API token.
 #[tauri::command]
@@ -696,7 +734,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(Coach::default())
-        .invoke_handler(tauri::generate_handler![ask, save_markdown, extract_pdf, ws_info, ws_use, ws_forget, reveal, docs_list, doc_create, doc_load, doc_save, doc_delete, asset_save, diagrams_list, diagram_save, diagram_load, diagram_delete, files_list, file_add, file_read, file_delete, library_load, library_save, confluence_fetch, settings_get, settings_set, agents_discover, agent_models, read_files, warm, style_get, style_set, templates_get, templates_set, feedback_get, feedback_set, doc_snapshot, history_list, history_read, confluence_publish])
+        .invoke_handler(tauri::generate_handler![ask, save_markdown, extract_pdf, ws_info, ws_use, ws_forget, reveal, docs_list, doc_create, doc_load, doc_save, doc_delete, asset_save, diagrams_list, diagram_save, diagram_load, diagram_delete, files_list, file_add, file_read, file_delete, library_load, library_save, confluence_fetch, confluence_comments, settings_get, settings_set, agents_discover, agent_models, read_files, warm, style_get, style_set, templates_get, templates_set, feedback_get, feedback_set, doc_snapshot, history_list, history_read, confluence_publish])
         .run(tauri::generate_context!())
         .expect("error while running Margin");
 }

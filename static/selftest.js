@@ -174,6 +174,20 @@
     ok('status bar shows Ship', /Ship/.test(document.querySelector('#status').textContent));
   });
 
+  await step('review packet and outcome', async () => {
+    const pk = reviewPacket();
+    ok('packet has brief, checks, rubric, claims and the document', ['## Brief', '## Ship checks', '## Panel rubric', '## Claims and sources', '## Context and problem'].every(h => pk.includes(h)));
+    openOutcome();
+    [...document.querySelectorAll('#import .gate button')].find(b => b.textContent.startsWith('4')).click();
+    [...document.querySelectorAll('#import .foot button')].find(b => b.textContent === 'Save').click();
+    ok('outcome recorded', state.outcome && state.outcome.score === 4);
+    ok('outcome in status bar', /Real review/.test(document.querySelector('#status').textContent));
+    ok('outcome in meta', meta().outcome === 4 && typeof meta().rubric === 'number');
+    openFeedback();
+    ok('feedback modal offers a Confluence pull', [...document.querySelectorAll('#import button')].some(b => /Pull comments/.test(b.textContent)));
+    document.querySelector('#import').hidden = true;
+  });
+
   await step('import markdown', async () => {
     const id0 = state.id;
     await importFile(new File(['# Imported\n\n## Alpha\n\nhello world'], 'imp.md', { type: 'text/markdown' }), 'design');

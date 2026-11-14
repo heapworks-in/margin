@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Margin</title>
 <link href="vendor/fonts/fonts.css" rel="stylesheet">
-<script src="vendor/editor.js?v=65"></script>
+<script src="vendor/editor.js?v=66"></script>
 <style>
 :root{
   color-scheme:dark;
@@ -548,6 +548,8 @@ html[data-demo] *,html[data-demo] *::before,html[data-demo] *::after{transition:
       <button type="button" id="copy">Copy as Markdown</button>
       <button type="button" id="download">Save as .md to Downloads</button>
       <button type="button" id="publish-btn">Publish to Confluence…</button>
+      <button type="button" id="packet-btn">Save the review packet (.md)</button>
+      <button type="button" id="outcome-btn">Record the real review…</button>
     </div>
   </details>
   <button type="button" class="btn primary" id="review-all">Review document</button>
@@ -765,6 +767,7 @@ const store = inApp ? {
   publish: (parentUrl, title, html, email, token, pageId) => invoke('confluence_publish', { parentUrl, title, html, email, token, pageId: pageId || null }),
   files: { list: () => invoke('files_list'), add: (name, data) => invoke('file_add', { name, data }), read: name => invoke('file_read', { name }), remove: name => invoke('file_delete', { name }) },
   confluence: (url, email, token) => invoke('confluence_fetch', { url, email, token }),
+  confluenceComments: (url, email, token) => invoke('confluence_comments', { url, email, token }),
 } : {
   _index: () => JSON.parse(localStorage.getItem('docu-coach-index') || '[]'),
   list: async function () { return this._index().map(id => { const d = JSON.parse(localStorage.getItem('docu-coach-doc:' + id) || '{}'); return { ...(d.meta || {}), id, title: d.title, templateId: d.templateId }; }).sort((a, b) => (b.updated || 0) - (a.updated || 0)); },
@@ -787,9 +790,10 @@ const store = inApp ? {
   agents: async () => [{ id: 'claude', name: 'Claude Code (bundled)', path: 'bundled with Margin; uses your Claude login', found: true }, { id: 'devin', name: 'Devin', path: '`devin` is not on your PATH', found: false }, { id: 'local', name: 'Local model (Ollama, LM Studio, llama.cpp\u2026)', path: 'Ollama is running at localhost:11434 with 2 models; no tokens used', found: true }, { id: 'custom', name: 'Custom ACP agent command', path: '', found: true }],
   settings: { get: async () => ({ agent: 'claude', command: '', args: '', quickAgent: '', quickModel: '', model: 'claude-opus-5-5', effort: 'medium', skills: [], useMySettings: false, ...JSON.parse(localStorage.getItem('docu-coach-settings') || '{}') }), set: async function (v) { const cur = await this.get(); const next = { ...cur, ...v }; localStorage.setItem('docu-coach-settings', JSON.stringify(next)); return next; } },
   confluence: async () => { throw new Error('Confluence import works in the app.'); },
+  confluenceComments: async () => { throw new Error('Pulling comments works in the app.'); },
 };
 
-const blank = () => ({ id: null, title: '', templateId: 'design', notes: '', docJson: null, current: null, mode: 'review', chat: [], comments: [], checks: {}, audience: '', purpose: '', brief: { ask: '', objection: '', deadline: '', numbers: '', nongoals: '' }, rubric: null, reader: null, claims: [], reviewed: {}, shipped: null, grades: [], reviewStats: [], publish: null, attachments: [], focus: false, threadOpen: false });
+const blank = () => ({ id: null, title: '', templateId: 'design', notes: '', docJson: null, current: null, mode: 'review', chat: [], comments: [], checks: {}, audience: '', purpose: '', brief: { ask: '', objection: '', deadline: '', numbers: '', nongoals: '' }, rubric: null, reader: null, claims: [], reviewed: {}, shipped: null, outcome: null, grades: [], reviewStats: [], publish: null, attachments: [], focus: false, threadOpen: false });
 let styleRules = '', feedbackText = '', coachLabels = { quick: '', deep: '' };
 const coachName = tier => coachLabels[tier] || coachLabels.deep;
 const describeCoach = (agent, model) => agent === 'local' ? (model ? `local \u00b7 ${model}` : 'local model') : agent === 'claude' ? (model ? `Claude Code \u00b7 ${model}` : 'Claude Code') : agent === 'custom' ? 'custom agent' : (agent || '') + (model ? ` \u00b7 ${model}` : '');
@@ -797,7 +801,7 @@ async function refreshCoachLabel() { try { const c = await store.settings.get();
 let savedTimer, saveTimer, saving = false, dirty = false;
 function meta() {
   const all = sections(), n = docWords();
-  return { words: n, sections: all.length, ready: all.filter(x => sectionStatus(x.title, x.words) === 'ready').length, open: state.comments.filter(c => !c.resolved).length, updated: Date.now() };
+  return { words: n, sections: all.length, ready: all.filter(x => sectionStatus(x.title, x.words) === 'ready').length, open: state.comments.filter(c => !c.resolved).length, updated: Date.now(), outcome: state.outcome ? state.outcome.score : null, rubric: state.rubric ? Math.round(rubricAvg() * 10) / 10 : null, deadline: (state.brief || {}).deadline || '' };
 }
 function save() {
   if (!state.id) return;
@@ -971,6 +975,7 @@ function renderMeta() {
     `<span>Page <b>${pages ? pages.toFixed(pages % 1 ? 1 : 0) : '0'}</b></span><span><b>${n.toLocaleString()}</b> ${n === 1 ? 'word' : 'words'}</span><span><b>${mins || '–'}</b> min read</span>` +
     `<span>Sections <b>${have}/${expected}</b> written, <b class="${all.length && ready === all.length ? 'ok' : ''}">${ready}</b> ready</span>` +
     `<span class="${open ? 'warn' : ''}">${open ? `<button type="button" id="notes-btn"><b>${open}</b> open ${open === 1 ? 'note' : 'notes'}</button>` : '<b>0</b> open notes'}</span>` +
+    (state.outcome ? `<span title="${esc(state.outcome.note || '')}">Real review <b>${state.outcome.score}/5</b></span>` : state.shipped ? `<span><button type="button" id="outcome-nudge">Record the real review\u2026</button></span>` : '') +
     (docWords() ? `<span><button type="button" id="gate-btn" title="The checks a tough reviewer runs before saying yes">Ship <b class="${shipChecks().every(c => c.ok) ? 'ok' : ''}">${shipChecks().filter(c => c.ok).length}/${shipChecks().length}</b></button></span>` : '') +
     ((slopCount = slopScan().length) ? `<span><button type="button" id="slop-btn" title="Machine-prose tells: jargon, filler, em dashes, binary contrasts. Click to underline them.">Slop <b class="${slopCount > 5 ? 'verdict revise' : ''}">${slopCount}</b></button></span>` : '') +
     (state.rubric ? `<span><button type="button" id="rubric-btn">Rubric <b>${rubricAvg().toFixed(1)}</b> · <span class="verdict ${state.rubric.verdict === 'SHIP' ? 'ship' : 'revise'}">${esc(state.rubric.verdict || 'REVISE')}</span></button></span>` : '') +
@@ -983,6 +988,7 @@ function renderMeta() {
   const rb = $('#rubric-btn'); if (rb) rb.onclick = e => showRubricPop(e.currentTarget);
   const sb = $('#slop-btn'); if (sb) sb.onclick = () => markSlop();
   const gb = $('#gate-btn'); if (gb) gb.onclick = e => showGatePop(e.currentTarget);
+  const on = $('#outcome-nudge'); if (on) on.onclick = openOutcome;
   const cb = $('#claims-btn'); if (cb) cb.onclick = e => showClaimsPop(e.currentTarget);
   const nb = $('#notes-btn'); if (nb) nb.onclick = e => showNotesPop(e.currentTarget);
   const rdb = $('#reader-btn'); if (rdb) rdb.onclick = e => { const pop = $('#pop'); clearTimeout(popTimer); popId = 'reader'; pop.className = 'pop rubric'; pop.replaceChildren(); const head = el('div', { className: 'card-head' }); head.append(el('b', { textContent: 'Your reader, after one read' })); pop.append(head, el('p', { style: 'margin:6px 0 0;font-size:13px;line-height:1.5;color:var(--ink-2)', textContent: state.reader.why }), el('p', { className: 'note', style: 'margin:8px 0 0;font-size:12px;color:var(--faint)', textContent: `Read ${ago(state.reader.at)}. Reader notes in the text show where it was decided.` })); placePop(pop, e.currentTarget); };
@@ -1284,6 +1290,66 @@ function renderLog() {
 
 /** Sections whose text differs from what the coach last reviewed (never-reviewed sections with text count as changed). */
 function changedSections() { return sections().filter(s => s.text.trim() && (state.reviewed || {})[s.title] !== s.text).map(s => s.title); }
+
+/* ---------- review packet: the document plus the evidence that it was reviewed ---------- */
+function reviewPacket() {
+  const b = state.brief || {}, lines = [];
+  lines.push(`# ${state.title || 'Untitled'} \u2014 review packet`, '', `Prepared with Margin on ${new Date().toLocaleDateString()}.`, '');
+  lines.push('## Brief', `- Reader: ${state.audience || '[not set]'}`, `- After reading they should: ${state.purpose || '[not set]'}`, `- The ask: ${b.ask || '[not set]'}`, `- Likely objection: ${b.objection || '[not set]'}`, `- Decision by: ${b.deadline || '[not set]'}`, '');
+  lines.push('## Ship checks'); for (const c of shipChecks()) lines.push(`- [${c.ok ? 'x' : ' '}] ${c.label} (${c.detail})`); lines.push('');
+  if (state.rubric) { lines.push(`## Panel rubric: ${rubricAvg().toFixed(1)} \u00b7 ${state.rubric.verdict}`, '', '| Dimension | Score | Evidence |', '|---|---|---|'); for (const d of RUBRIC) { const sc = state.rubric.scores[d]; if (sc) lines.push(`| ${d} | ${sc.value} | ${sc.note.replace(/\|/g, '/')} |`); } lines.push(''); }
+  if (state.reader) lines.push('## Reader', `${{ yes: 'Says yes', ask: 'Would ask first', no: 'Says no' }[state.reader.decision]}: ${state.reader.why}`, '');
+  if (state.claims.length) { lines.push('## Claims and sources', '', '| Claim | Source |', '|---|---|'); for (const c of state.claims) lines.push(`| ${c.quote.replace(/\|/g, '/')} | ${c.source} |`); lines.push(''); }
+  const open = state.comments.filter(c => !c.resolved && c.kind !== 'draft');
+  if (open.length) { lines.push(`## Open notes (${open.length})`); const by = {}; for (const c of open) (by[c.section || 'Document'] ||= []).push(c); for (const [sec, list] of Object.entries(by)) { lines.push(`### ${sec}`); for (const c of list) lines.push(`- **${KIND_SHORT[c.kind]}**${c.persona ? ` (${c.persona})` : ''}${c.quote ? ` \u201c${c.quote}\u201d:` : ':'} ${c.body}`); } lines.push(''); }
+  if (state.outcome) lines.push('## Real review', `Outcome ${state.outcome.score}/5${state.outcome.note ? ': ' + state.outcome.note : ''}`, '');
+  lines.push('---', '', toMarkdown());
+  return lines.join('\n');
+}
+async function savePacket() {
+  const b = $('#packet-btn'); $('#export').open = false;
+  try {
+    if (inApp) { const path = await window.__TAURI__.core.invoke('save_markdown', { name: (state.title || 'document') + ' review packet', text: reviewPacket() }); b.textContent = 'Saved to Downloads'; b.title = path; }
+    else { await navigator.clipboard.writeText(reviewPacket()); b.textContent = 'Copied the packet'; }
+  } catch (e) { b.textContent = 'Save failed'; b.title = String(e); }
+  setTimeout(() => { b.textContent = 'Save the review packet (.md)'; }, 2500);
+}
+$('#packet-btn').onclick = savePacket;
+
+/* ---------- the real review: record how it went, pull the comments, learn ---------- */
+const OUTCOMES = [[5, 'Approved as is'], [4, 'Approved with small changes'], [3, 'Sent back for one more round'], [2, 'Major rework asked'], [1, 'Rejected or shelved']];
+function openOutcome() {
+  $('#export').open = false;
+  const m = $('#import'); m.replaceChildren();
+  const box = el('div', { className: 'box' });
+  box.append(el('h2', { textContent: 'How did the real review go?' }), el('p', { className: 'note', textContent: 'Kept with the document, shown in the Library, and over time the only honest measure of whether the coaching works. Then paste or pull the reviewers\u2019 comments so the coach learns what they cared about.' }));
+  const row = el('div', { className: 'gate' }); let score = state.outcome ? state.outcome.score : 0;
+  const btns = OUTCOMES.map(([v, label]) => { const b = el('button', { type: 'button', className: 'btn' + (score === v ? ' primary' : ''), textContent: `${v} \u00b7 ${label}` }); b.onclick = () => { score = v; btns.forEach(x => x.classList.toggle('primary', x === b)); }; return b; });
+  row.append(...btns);
+  const note = el('input', { type: 'text', placeholder: 'One line, optional: what decided it', value: state.outcome ? state.outcome.note || '' : '' });
+  const foot = el('div', { className: 'foot' }); const err = el('span', { className: 'err' });
+  const cancel = el('button', { type: 'button', className: 'btn', textContent: 'Cancel' }); cancel.onclick = () => { m.hidden = true; };
+  const then = el('button', { type: 'button', className: 'btn', textContent: 'Save, then learn from the comments' });
+  const saveBtn = el('button', { type: 'button', className: 'btn primary', textContent: 'Save' });
+  const commit = () => { if (!score) { err.textContent = 'Pick a score.'; return false; } state.outcome = { score, note: note.value.trim(), at: Date.now() }; save(); renderMeta(); m.hidden = true; return true; };
+  saveBtn.onclick = commit; then.onclick = () => { if (commit()) openFeedback(); };
+  foot.append(err, cancel, then, saveBtn); box.append(row, note, foot); m.append(box); m.hidden = false;
+}
+$('#outcome-btn').onclick = openOutcome;
+/** Pull the comments from the Confluence page this document was published to (or any page link) into the feedback box. */
+async function pullConfluenceComments(ta, urlInput, status) {
+  const url = (urlInput.value || (state.publish && state.publish.url) || '').trim();
+  const email = localStorage.getItem('docu-coach-atlassian-email') || '', token = localStorage.getItem('docu-coach-atlassian-token') || '';
+  if (!url) { status.textContent = 'Give the page link.'; return; }
+  if (!email || !token) { status.textContent = 'No Atlassian login saved. Publish or import once with Remember ticked.'; return; }
+  status.textContent = 'Pulling comments\u2026';
+  try {
+    const list = await store.confluenceComments(url, email, token);
+    if (!list.length) { status.textContent = 'No comments on that page yet.'; return; }
+    ta.value = list.map(c => `- ${c.kind === 'inline' && c.on ? `On \u201c${c.on.slice(0, 80)}\u201d: ` : ''}${c.text}`).join('\n');
+    status.textContent = `${list.length} comment${list.length === 1 ? '' : 's'} pulled. Edit if you like, then Compare and learn.`;
+  } catch (e) { status.textContent = String(e.message || e); }
+}
 
 /* ---------- ship gate: is this document ready to leave the room? ---------- */
 function shipChecks() {
@@ -1750,6 +1816,7 @@ async function renderLibrary() {
   // Header: workspace name, path, switcher
   const head = el('div', { className: 'lib-head' });
   head.append(el('h1', { textContent: wsInfo.name }), el('span', { className: 'path', textContent: wsInfo.path }));
+  try { const all = await store.list(); const done = all.filter(d => d.outcome); if (done.length) head.append(el('span', { className: 'path', textContent: `\u00b7 real reviews: ${(done.reduce((a, d) => a + d.outcome, 0) / done.length).toFixed(1)}/5 over ${done.length}` })); } catch {}
   const right = el('div', { className: 'right' });
   if (inApp) {
     const sw = el('select', { title: 'Switch workspace' });
@@ -1788,7 +1855,7 @@ async function renderLibrary() {
     const card = el('button', { type: 'button', className: 'doc' });
     card.append(el('div', { className: 't', textContent: d.title || 'Untitled' }), el('div', { className: 'k', textContent: (TEMPLATES[d.templateId]?.name || 'Document') + (d.updated ? ' · edited ' + ago(d.updated) : '') }));
     const m = el('div', { className: 'm' });
-    m.innerHTML = `<span><b>${(d.words || 0).toLocaleString()}</b> words</span><span><b class="${d.sections && d.ready === d.sections ? 'ok' : ''}">${d.ready || 0}/${d.sections || 0}</b> sections ready</span>${d.open ? `<span class="warn"><b>${d.open}</b> open notes</span>` : ''}`;
+    m.innerHTML = (d.outcome ? `<span>Real review <b>${d.outcome}/5</b></span>` : d.rubric ? `<span>Rubric <b>${d.rubric}</b></span>` : '') + `<span><b>${(d.words || 0).toLocaleString()}</b> words</span><span><b class="${d.sections && d.ready === d.sections ? 'ok' : ''}">${d.ready || 0}/${d.sections || 0}</b> sections ready</span>${d.open ? `<span class="warn"><b>${d.open}</b> open notes</span>` : ''}`;
     card.append(m);
     const x = el('button', { type: 'button', className: 'x', textContent: '×', title: 'Delete this document' });
     x.onclick = async e => { e.stopPropagation(); if (x.dataset.armed) { await store.remove(d.id); if (state.id === d.id) { state = blank(); localStorage.removeItem(LAST); } renderLibrary(); } else { x.dataset.armed = '1'; x.textContent = 'Delete?'; setTimeout(() => { x.dataset.armed = ''; x.textContent = '×'; }, 3000); } };
@@ -1868,11 +1935,15 @@ function openFeedback() {
   const box = el('div', { className: 'box' });
   box.append(el('h2', { textContent: 'Learn from real feedback' }), el('p', { className: 'note', textContent: 'Paste the comments reviewers actually gave on this document. The coach compares them with its own notes and writes calibration lines into the workspace (feedback.md) so future panels weight what your reviewers care about.' }));
   const ta = el('textarea', { rows: 8, placeholder: 'Paste reviewer comments here…', style: 'background:var(--canvas);border:1px solid var(--line-strong);border-radius:8px;color:var(--ink);font:13px/1.5 var(--ui);padding:10px;outline:none;resize:vertical' });
+  const pullRow = el('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' });
+  const pageUrl = el('input', { type: 'text', placeholder: state.publish && state.publish.url ? state.publish.url : 'Confluence page link (optional)', value: '', style: 'flex:1;min-width:240px' });
+  const pull = el('button', { type: 'button', className: 'btn', textContent: 'Pull comments from Confluence' }); const pstat = el('small', { className: 'note', style: 'flex-basis:100%' });
+  pull.onclick = () => pullConfluenceComments(ta, pageUrl, pstat); pullRow.append(pageUrl, pull, pstat);
   const foot = el('div', { className: 'foot' }); const err = el('span', { className: 'err' });
   const cancel = el('button', { type: 'button', className: 'btn', textContent: 'Cancel' }); cancel.onclick = () => { m.hidden = true; };
   const go = el('button', { type: 'button', className: 'btn primary', textContent: 'Compare and learn' });
   go.onclick = () => { if (!ta.value.trim()) { err.textContent = 'Paste the comments first.'; return; } m.hidden = true; setMode('review'); send(`Learn from feedback. These are the real reviewer comments I received on this document:\n\n${ta.value.trim()}`, { label: 'Learn from real feedback', feedback: true }); };
-  foot.append(err, cancel, go); box.append(ta, foot); m.append(box); m.hidden = false; ta.focus();
+  foot.append(err, cancel, go); box.append(pullRow, ta, foot); m.append(box); m.hidden = false; ta.focus();
 }
 
 /* ---------- settings ---------- */

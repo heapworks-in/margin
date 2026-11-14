@@ -89,7 +89,9 @@ Then **Rehearse** mode. **Start the meeting**: the panel asks its hardest questi
 
 - **Lessons** (status bar, right) tallies the English rules you keep hitting across all your documents. **Teach me** on any rule gives three sentences and one exercise. The count per review is shown so you can watch it fall.
 - **History** (status bar): a snapshot is taken after every review. Click one for a line diff against the current text and the rubric trend.
-- **Learn from feedback** (Review mode): after the real review, paste the comments you received. The coach compares them with its own notes, says what it missed and what it over-flagged, and writes "Weight:" lines into the workspace's `feedback.md`. Every later panel reads that file, so the coach gets closer to your actual reviewers over time. Edit it any time in Settings.
+- **Record the real review** (Export menu, or the status-bar nudge after you ship): how it went, 1 to 5, kept with the document and shown in the Library, with the workspace average over time. It is the only honest measure of whether the coaching works.
+- **Review packet** (Export menu): one Markdown file with the Brief, the ship checks, the panel rubric with evidence, the reader's verdict, the claim ledger and the open notes, followed by the document. Attach it when you send the document: reviewers see the work was done.
+- **Learn from feedback** (Review mode): after the real review, paste the comments you received, or **Pull comments from Confluence** straight from the page you published to. The coach compares them with its own notes, says what it missed and what it over-flagged, and writes "Weight:" lines into the workspace's `feedback.md`. Every later panel reads that file, so the coach gets closer to your actual reviewers over time. Edit it any time in Settings.
 
 ## 11. Ship it
 
