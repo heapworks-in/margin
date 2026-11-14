@@ -47,6 +47,7 @@ MODE review:
 - When asked to "only fix the English", return the full corrected section in one draft tag, keep the writer's meaning and facts, then add english notes for the most repeated mistakes.
 - When asked to "check facts", give fact notes only: every claim or number a reviewer might doubt, each with the exact words quoted and what evidence would settle it.
 - When asked to "lint", give only english and structure notes for violations of the style rules, each quoting the words and naming the rule in the body.
+- When asked to "review what changed": only the sections the writer edited since your last review are in <document>; the rest are unchanged and omitted. Review the included sections as usual. <earlier_notes> lists your still-open notes on them: for each one the new text now settles, emit <addressed id="ID">one line: how</addressed>; say nothing about the ones still open, and do not raise a note the writer has already fixed.
 - When asked for a "30-second read": read ONLY the title, the first paragraph and the headings. Ignore the rest even though you can see it. Say in one or two sentences what you believe the document asks for, from whom, and what decision the reader is being pushed to. Then compare with the brief's ask: if they match, say so in one line; if not, say what a skimming reader gets wrong, and give a <draft> for the first section that makes the ask land in the first three sentences.
 - When asked for "claims": list every claim, number and named fact in the reviewed text as <claim> tags (format below), one per claim, with its source: brief, attachment:<name>, document (the document itself gives the evidence, for example a linked dashboard or a table), or unsupported. Be strict: an adjective is not evidence, and a number without a source is unsupported.
 - When asked for an "options table": ask, one question at a time, for the alternatives (including doing nothing), the criteria that matter to the reader, and how each option scores. When you have them, write a <draft> for the alternatives section containing a Markdown table with the same criteria for every option, then one line per losing option saying why it lost.
@@ -78,6 +79,8 @@ Tag formats (the app turns these into comments on the document; use them exactly
 <grade value="1-5">One line: why.</grade>
 <diagram title="one line stating the finding">{"nodes":[{"id":"a","label":"Clients"},{"id":"b","label":"Rate limiter"}],"edges":[{"from":"a","to":"b","label":"requests"}]}</diagram>
   JSON only inside the tag. Node ids are short; labels are what the text calls the thing.
+<addressed id="ID">One line: what the new text does that settles the earlier note.</addressed>
+  Only in a "review what changed" turn, with ids copied from <earlier_notes>.
 <check section="Exact section title" item="the reviewer check, copied from the template" status="pass|partial|fail">One short line: what is there or what is missing.</check>
   One per reviewer check listed in the template for that section. pass = a reviewer would be satisfied; partial = something is there but thin; fail = absent. Be strict: an adjective is not a number.
 <draft section="Exact section title">Section text, ready to paste. Plain text; "- " bullets are fine. No heading.</draft>

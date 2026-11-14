@@ -59,6 +59,7 @@ Put the cursor in a section and press **Review this section**. Notes appear as u
 - Click an underline, or just place the cursor in it, to see the note. English notes carry a fix: **Accept** applies it in place. **Resolve** clears any note.
 - Click the heading badge for the section's reviewer checks (pass, partial, fail) and the section status: not started, drafted, needs work, ready.
 - The status bar's **open notes** count is a button: it lists every open note by section. Underlined notes open on the text; notes about a whole section (nothing to underline) open from the section's heading badge.
+- **Review what changed** (after you edit): sends only the sections you changed since the coach last saw them, and asks the coach which of its earlier notes your edits settle. Those notes resolve themselves ("2 earlier notes addressed by your edits"); the open ones stay, and nothing already fixed gets raised again. Cheaper than a full review, and the way to iterate.
 - **Fix English** returns the whole section corrected, keeping your meaning and facts, plus the rules you keep hitting.
 - **Lint** checks the document against your style rules (Settings → Style rules; a sensible default is built in).
 - **Check facts** lists every claim a reviewer might doubt. **Claims** goes further: a ledger of every claim with its source (brief, attachment, the document, or unsupported). Unsupported claims are underlined; the status bar shows the count.
@@ -91,6 +92,8 @@ Then **Rehearse** mode. **Start the meeting**: the panel asks its hardest questi
 - **Learn from feedback** (Review mode): after the real review, paste the comments you received. The coach compares them with its own notes, says what it missed and what it over-flagged, and writes "Weight:" lines into the workspace's `feedback.md`. Every later panel reads that file, so the coach gets closer to your actual reviewers over time. Edit it any time in Settings.
 
 ## 11. Ship it
+
+The status bar's **Ship n/5** is the gate: no high-severity notes open, every claim sourced, no machine-prose tells, the panel says SHIP at 4.0 or better, and your reader does not say no. Click it any time to see which are met. Copy, save and publish run the same checklist first; if something is not met you see the list and can go ahead anyway, knowingly.
 
 **Export**: copy as Markdown, save a `.md` to Downloads, or **Publish to Confluence** (creates a page under a parent page you paste; publishing again updates the same page). Comments are never exported. Diagrams and images stay in Margin; a placeholder marks them.
 

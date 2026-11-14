@@ -337,7 +337,8 @@ mod prompts {
             "history": history
         })
     }
-    fn turn(mode: &str, current: &str, history: Vec<Value>) -> String {
+    fn turn(mode: &str, current: &str, history: Vec<Value>) -> String { let b = body(mode, current, history); turn_with(mode, &b) }
+    fn turn_with(mode: &str, b: &Value) -> String {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
         let script = root.join("agent/node_modules/@agentclientprotocol/claude-agent-acp/dist/index.js");
         let workdir = std::env::temp_dir().join("docu-coach-test");
@@ -345,16 +346,18 @@ mod prompts {
         let node = std::env::var("DOCU_COACH_NODE").unwrap_or_else(|_| "node".into());
         let acp = super::Acp::start(node.as_ref(), &[script.to_string_lossy().to_string()], &workdir).unwrap();
         let mut reply = String::new();
-        acp.ask(prompt::SYSTEM, &prompt::build(&body(mode, current, history)), &[], &super::RunConfig { claude: true, model: "claude-opus-5-5".into(), ..Default::default() }, |t| reply.push_str(t)).unwrap();
-        println!("----- {mode} / {current}\n{reply}\n");
+        let scope = b["scope"].as_str().unwrap_or("document");
+        acp.ask(&prompt::system_for(mode, scope, false), &prompt::build(b), &[], &super::RunConfig { claude: true, model: "claude-opus-5-5".into(), ..Default::default() }, |t| reply.push_str(t)).unwrap();
+        println!("----- {mode} / {scope}\n{reply}\n");
         reply
     }
     fn user(s: &str) -> Value { json!({"role": "user", "content": s}) }
     fn squash(s: &str) -> String { s.to_lowercase().replace(['“', '”', '"', '\'', '’'], "").split_whitespace().collect::<Vec<_>>().join(" ") }
     fn attr<'a>(tag: &'a str, name: &str) -> Option<&'a str> { tag.split(&format!("{name}=\"")).nth(1).and_then(|r| r.split('"').next()) }
     fn tags<'a>(reply: &'a str, name: &str) -> Vec<&'a str> { reply.split(&format!("<{name} ")).skip(1).collect() }
-    fn grounded(reply: &str, name: &str) {
-        let hay = squash(&format!("{CONTEXT}\n{DESIGN}\n{ALTS}"));
+    fn grounded(reply: &str, name: &str) { grounded_in(reply, name, &format!("{CONTEXT}\n{DESIGN}\n{ALTS}")) }
+    fn grounded_in(reply: &str, name: &str, text: &str) {
+        let hay = squash(text);
         for t in tags(reply, name) { if let Some(q) = attr(t, "quote") { assert!(hay.contains(&squash(q)), "{name} quote not in document: {q}"); } }
     }
 
@@ -444,6 +447,21 @@ mod prompts {
             assert!(!low.contains(tell), "slop tell in draft: {tell:?}");
         }
         assert!(low.contains("[todo") || low.contains("todo:"), "thin facts should become TODOs, not guesses");
+    }
+
+    #[test] #[ignore]
+    fn review_what_changed_addresses_fixed_notes() {
+        let mut b = body("review", "Context and problem", vec![user("Review what changed since your last review. Only the edited sections are included; mark the earlier notes the new text settles as addressed.")]);
+        b["scope"] = json!("changed");
+        b["sections"] = json!([{"title": "Context and problem", "text": "The Payments API gets too many requests from a few clients at month end: 3 of 240 clients send about 70% of requests (Grafana, payments-traffic board, 31 Oct). p99 latency rises from 200 ms to 2.1 s for everyone, and the on-call engineer throttles clients by hand. Three incidents in the last quarter were caused by this."}, {"title": "Proposed design", "text": ""}, {"title": "Alternatives considered", "text": ""}, {"title": "Failure modes", "text": ""}]);
+        b["earlier"] = json!([
+            {"id": "n-clients", "kind": "fact", "section": "Context and problem", "quote": "too many requests from a few clients", "body": "How many clients, and what share of the traffic? One number from the last spike settles it."},
+            {"id": "n-incidents", "kind": "missing", "section": "Context and problem", "quote": "Three incidents in the last quarter", "body": "Link the incident reports and give the dates."}
+        ]);
+        let reply = turn_with("review", &b);
+        assert!(reply.contains("<addressed id=\"n-clients\">"), "the client count is now in the text; it should be addressed");
+        assert!(!reply.contains("<addressed id=\"n-incidents\">"), "the incidents are still unlinked; must stay open");
+        grounded_in(&reply, "note", b["sections"][0]["text"].as_str().unwrap());
     }
 
     #[test] #[ignore]

@@ -150,6 +150,30 @@
     mockCoach = real;
   });
 
+  await step('review what changed', async () => {
+    setMode('review');
+    const t = 'Context and problem';
+    const n0 = state.chat.length;
+    doc.setSection(t, sectionText(t) + ' Three of 240 clients send 70% of requests (Grafana, Oct 31).', 'append');
+    ok('edited section counts as changed', changedSections().includes(t), changedSections().join(','));
+    const openBefore = state.comments.filter(c => !c.resolved && c.kind !== 'draft' && c.section === t).length;
+    await send(ACTIONS.review.find(a => a[0] === 'Review what changed')[1](), { tier: 'deep', scope: 'changed' });
+    const openAfter = state.comments.filter(c => !c.resolved && c.kind !== 'draft' && c.section === t).length;
+    ok('an earlier note was addressed', openBefore === 0 || openAfter < openBefore + 1, `${openBefore} -> ${openAfter}`);
+    ok('reviewed text remembered', state.reviewed[t] === sectionText(t));
+    ok('nothing-changed short-circuit', (await send(ACTIONS.review.find(a => a[0] === 'Review what changed')[1](), { tier: 'deep', scope: 'changed' }), /Nothing has changed/.test(state.chat[state.chat.length - 1].content)));
+  });
+
+  await step('ship gate', async () => {
+    const checks = shipChecks();
+    ok('five ship checks', checks.length === 5);
+    let ran = false; gate(() => { ran = true; }, 'copy');
+    ok('gate shows the checklist when checks fail', !ran && !document.querySelector('#import').hidden && document.querySelectorAll('#import .gate .grow').length === 5);
+    [...document.querySelectorAll('#import button')].find(b => /anyway/.test(b.textContent)).click();
+    ok('anyway proceeds and records', ran && state.shipped && state.shipped.checks.length === 5);
+    ok('status bar shows Ship', /Ship/.test(document.querySelector('#status').textContent));
+  });
+
   await step('import markdown', async () => {
     const id0 = state.id;
     await importFile(new File(['# Imported\n\n## Alpha\n\nhello world'], 'imp.md', { type: 'text/markdown' }), 'design');

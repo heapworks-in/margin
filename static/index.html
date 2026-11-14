@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Margin</title>
 <link href="vendor/fonts/fonts.css" rel="stylesheet">
-<script src="vendor/editor.js?v=63"></script>
+<script src="vendor/editor.js?v=65"></script>
 <style>
 :root{
   color-scheme:dark;
@@ -388,6 +388,11 @@ mark.c-mark.active{box-shadow:0 0 0 2px var(--accent-soft);filter:saturate(1.4)}
 .router .q p{margin:0;font-size:14px;color:var(--ink)}
 .router .q .ans{display:flex;gap:8px}
 .router .result{font-size:14px;color:var(--ink);line-height:1.6}
+.gate{display:flex;flex-direction:column;gap:6px;margin-top:6px}
+.gate .grow{display:grid;grid-template-columns:18px 1fr auto;gap:8px;align-items:baseline;font-size:13px;color:var(--ink-2)}
+.gate .grow i{font-style:normal;font-weight:700}
+.gate .ok i{color:var(--green)}.gate .no i{color:var(--fact)}
+.gate small{color:var(--muted)}
 .advance{font-size:13px;color:var(--ink-2);display:flex;flex-direction:column;gap:6px;background:var(--accent-soft);border-radius:8px;padding:8px 10px}
 .ledger{display:flex;flex-direction:column;gap:4px;max-height:40vh;overflow:auto;margin-top:6px}
 .lrow{display:flex;align-items:baseline;gap:10px;font-size:12.5px;padding:4px 6px;border-radius:6px;cursor:pointer}
@@ -784,7 +789,7 @@ const store = inApp ? {
   confluence: async () => { throw new Error('Confluence import works in the app.'); },
 };
 
-const blank = () => ({ id: null, title: '', templateId: 'design', notes: '', docJson: null, current: null, mode: 'review', chat: [], comments: [], checks: {}, audience: '', purpose: '', brief: { ask: '', objection: '', deadline: '', numbers: '', nongoals: '' }, rubric: null, reader: null, claims: [], grades: [], reviewStats: [], publish: null, attachments: [], focus: false, threadOpen: false });
+const blank = () => ({ id: null, title: '', templateId: 'design', notes: '', docJson: null, current: null, mode: 'review', chat: [], comments: [], checks: {}, audience: '', purpose: '', brief: { ask: '', objection: '', deadline: '', numbers: '', nongoals: '' }, rubric: null, reader: null, claims: [], reviewed: {}, shipped: null, grades: [], reviewStats: [], publish: null, attachments: [], focus: false, threadOpen: false });
 let styleRules = '', feedbackText = '', coachLabels = { quick: '', deep: '' };
 const coachName = tier => coachLabels[tier] || coachLabels.deep;
 const describeCoach = (agent, model) => agent === 'local' ? (model ? `local \u00b7 ${model}` : 'local model') : agent === 'claude' ? (model ? `Claude Code \u00b7 ${model}` : 'Claude Code') : agent === 'custom' ? 'custom agent' : (agent || '') + (model ? ` \u00b7 ${model}` : '');
@@ -966,6 +971,7 @@ function renderMeta() {
     `<span>Page <b>${pages ? pages.toFixed(pages % 1 ? 1 : 0) : '0'}</b></span><span><b>${n.toLocaleString()}</b> ${n === 1 ? 'word' : 'words'}</span><span><b>${mins || '–'}</b> min read</span>` +
     `<span>Sections <b>${have}/${expected}</b> written, <b class="${all.length && ready === all.length ? 'ok' : ''}">${ready}</b> ready</span>` +
     `<span class="${open ? 'warn' : ''}">${open ? `<button type="button" id="notes-btn"><b>${open}</b> open ${open === 1 ? 'note' : 'notes'}</button>` : '<b>0</b> open notes'}</span>` +
+    (docWords() ? `<span><button type="button" id="gate-btn" title="The checks a tough reviewer runs before saying yes">Ship <b class="${shipChecks().every(c => c.ok) ? 'ok' : ''}">${shipChecks().filter(c => c.ok).length}/${shipChecks().length}</b></button></span>` : '') +
     ((slopCount = slopScan().length) ? `<span><button type="button" id="slop-btn" title="Machine-prose tells: jargon, filler, em dashes, binary contrasts. Click to underline them.">Slop <b class="${slopCount > 5 ? 'verdict revise' : ''}">${slopCount}</b></button></span>` : '') +
     (state.rubric ? `<span><button type="button" id="rubric-btn">Rubric <b>${rubricAvg().toFixed(1)}</b> · <span class="verdict ${state.rubric.verdict === 'SHIP' ? 'ship' : 'revise'}">${esc(state.rubric.verdict || 'REVISE')}</span></button></span>` : '') +
     (state.reader ? `<span><button type="button" id="reader-btn" title="${esc(state.reader.why)}">Reader <b class="verdict ${state.reader.decision === 'yes' ? 'ship' : state.reader.decision === 'no' ? 'revise' : ''}">${{ yes: 'says yes', ask: 'would ask', no: 'says no' }[state.reader.decision]}</b></button></span>` : '') +
@@ -976,6 +982,7 @@ function renderMeta() {
   $('#lessons-btn').onclick = e => showLessonsPop(e.currentTarget);
   const rb = $('#rubric-btn'); if (rb) rb.onclick = e => showRubricPop(e.currentTarget);
   const sb = $('#slop-btn'); if (sb) sb.onclick = () => markSlop();
+  const gb = $('#gate-btn'); if (gb) gb.onclick = e => showGatePop(e.currentTarget);
   const cb = $('#claims-btn'); if (cb) cb.onclick = e => showClaimsPop(e.currentTarget);
   const nb = $('#notes-btn'); if (nb) nb.onclick = e => showNotesPop(e.currentTarget);
   const rdb = $('#reader-btn'); if (rdb) rdb.onclick = e => { const pop = $('#pop'); clearTimeout(popTimer); popId = 'reader'; pop.className = 'pop rubric'; pop.replaceChildren(); const head = el('div', { className: 'card-head' }); head.append(el('b', { textContent: 'Your reader, after one read' })); pop.append(head, el('p', { style: 'margin:6px 0 0;font-size:13px;line-height:1.5;color:var(--ink-2)', textContent: state.reader.why }), el('p', { className: 'note', style: 'margin:8px 0 0;font-size:12px;color:var(--faint)', textContent: `Read ${ago(state.reader.at)}. Reader notes in the text show where it was decided.` })); placePop(pop, e.currentTarget); };
@@ -1097,6 +1104,7 @@ const ACTIONS = {
   ],
   review: [
     ['Review this section', s => `Review the "${s}" section.`, 'deep', 'section'],
+    ['Review what changed', () => 'Review what changed since your last review. Only the edited sections are included; mark the earlier notes the new text settles as addressed.', 'deep', 'changed'],
     ['30-second read', () => 'Do the 30-second read of this document: title, first paragraph and headings only. What do you believe it asks for, and does that match the brief?', 'quick', 'document'],
     ['Read as my reader', () => 'Read this document as my reader: the reader in the brief, with their job, their time and their objection. Tell me what happens in their head, where it happens, and what they decide.', 'deep', 'document'],
     ['Claims', s => `List the claims in the "${s}" section with their sources.`, 'deep', 'section', true],
@@ -1153,7 +1161,7 @@ function md(t) {
 }
 const kindOf = a => KIND_LABEL[a.type] && a.type !== 'draft' ? a.type : 'structure';
 // Text the thread shows: the reply minus its tags (they become comments).
-const prose = text => text.replace(/<(check|score|claim|note|reader)\b([^>]*?)\s*\/>/g, '<$1$2></$1>').replace(TAG, '').replace(/<(check|score|claim|diagram)\b[^>]*>[\s\S]*?<\/\1>/g, '').replace(/<reader\b[^>]*decision="(\w+)"[^>]*>([\s\S]*?)<\/reader>/g, (m, d, why) => `**Your reader ${{ yes: 'says yes', ask: 'would ask first', no: 'says no' }[d.toLowerCase()] || 'decides'}.** ${why.trim()}`).replace(/<grade\b[^>]*value="(\d)"[^>]*>([\s\S]*?)<\/grade>/g, (m, v, why) => `**Answer graded ${v}/5.** ${why.trim()}`).replace(/<verdict>[\s\S]*?<\/verdict>/g, '').replace(/<(note|draft|check|score|verdict|claim|grade|diagram)\b[\s\S]*$/, '').replace(/\n{3,}/g, '\n\n').trim();
+const prose = text => text.replace(/<(check|score|claim|note|reader)\b([^>]*?)\s*\/>/g, '<$1$2></$1>').replace(/<addressed\b[^>]*>[\s\S]*?<\/addressed>/g, '').replace(TAG, '').replace(/<(check|score|claim|diagram)\b[^>]*>[\s\S]*?<\/\1>/g, '').replace(/<reader\b[^>]*decision="(\w+)"[^>]*>([\s\S]*?)<\/reader>/g, (m, d, why) => `**Your reader ${{ yes: 'says yes', ask: 'would ask first', no: 'says no' }[d.toLowerCase()] || 'decides'}.** ${why.trim()}`).replace(/<grade\b[^>]*value="(\d)"[^>]*>([\s\S]*?)<\/grade>/g, (m, v, why) => `**Answer graded ${v}/5.** ${why.trim()}`).replace(/<verdict>[\s\S]*?<\/verdict>/g, '').replace(/<(note|draft|check|score|verdict|claim|grade|diagram)\b[\s\S]*$/, '').replace(/\n{3,}/g, '\n\n').trim();
 function typing(label, since) {
   const d = el('div', { className: 'pending', innerHTML: `<span class="typing"><i></i><i></i><i></i></span>${esc(label)}` });
   if (since) { const t = el('span', { className: 'elapsed' }); const tick = () => { const s = Math.round((Date.now() - since) / 1000); t.textContent = ` ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; }; tick(); const iv = setInterval(() => { if (!d.isConnected) return clearInterval(iv); tick(); }, 1000); d.append(t); }
@@ -1175,7 +1183,11 @@ const SCORE = /<score\b([^>]*)>([\s\S]*?)<\/score>/g;
 const CLAIM = /<claim\b([^>]*)>([\s\S]*?)<\/claim>/g;
 const GRADE = /<grade\b([^>]*)>([\s\S]*?)<\/grade>/g;
 const DIAGRAM = /<diagram\b([^>]*)>([\s\S]*?)<\/diagram>/g;
+const ADDRESSED = /<addressed\b([^>]*)>([\s\S]*?)<\/addressed>/g;
+let lastAddressed = 0;
 function ingest(reply, section) {
+  lastAddressed = 0;
+  for (const m of reply.matchAll(ADDRESSED)) { const id = (attrs(m[1]).id || '').trim(); const c = state.comments.find(x => x.id === id && !x.resolved); if (c) { c.resolved = true; c.addressed = m[2].trim(); if (c.anchored) { doc.unannotate(c.id); c.anchored = false; } lastAddressed++; } }
   // Some models close tags as <check … />; give them a body so every parser below sees one shape.
   reply = reply.replace(/<(check|score|claim|note|reader)\b([^>]*?)\s*\/>/g, '<$1$2></$1>');
   let n = 0;
@@ -1245,6 +1257,8 @@ function fillMsg(d, m) {
   const text = prose(m.content);
   if (text) nodes.push(md(text));
   if (!m.done) nodes.push(typing(/<(note|draft)\b/.test(m.content.slice(-400)) ? 'Writing a comment' : m.content.trim() ? 'Writing' : 'Thinking', m.since));
+  if (m.addressedCount) nodes.push(el('div', { className: 'verify', textContent: `${m.addressedCount} earlier note${m.addressedCount === 1 ? '' : 's'} addressed by your edits.` }));
+  if (false) {}
   else if (m.added) { const a = el('button', { className: 'added', type: 'button', innerHTML: `${m.added} note${m.added === 1 ? '' : 's'} added to the document →` }); a.onclick = () => { showView('doc'); const first = state.comments.find(c => !c.resolved); if (first) activate(first.id, true); }; nodes.push(a); }
   if (m.done && m.drafts && m.drafts.length >= 2) {
     const ds = m.drafts.map(id => state.comments.find(c => c.id === id)).filter(Boolean);
@@ -1266,6 +1280,49 @@ function renderLog() {
   if (!state.chat.length) log.append(welcome());
   for (const m of state.chat) { if (m.hidden) continue; const d = el('div', { className: 'msg ' + m.role }); fillMsg(d, m); log.append(d); }
   log.scrollTop = log.scrollHeight;
+}
+
+/** Sections whose text differs from what the coach last reviewed (never-reviewed sections with text count as changed). */
+function changedSections() { return sections().filter(s => s.text.trim() && (state.reviewed || {})[s.title] !== s.text).map(s => s.title); }
+
+/* ---------- ship gate: is this document ready to leave the room? ---------- */
+function shipChecks() {
+  const open = state.comments.filter(c => !c.resolved && c.kind !== 'draft');
+  const high = open.filter(c => c.severity === 'high').length;
+  const unsupported = state.claims.filter(c => /^unsupported/i.test(c.source) && open.some(n => n.id === c.id)).length;
+  const slop = slopScan().length;
+  const avg = state.rubric ? rubricAvg() : 0;
+  return [
+    { label: 'No high-severity notes open', ok: high === 0, detail: high ? `${high} open` : 'none open' },
+    { label: 'Every claim has a source', ok: state.claims.length > 0 && unsupported === 0, detail: unsupported ? `${unsupported} unsupported` : state.claims.length ? 'all sourced' : 'run Claims to check' },
+    { label: 'No machine-prose tells', ok: slop === 0, detail: slop ? `${slop} to fix` : 'clean' },
+    { label: 'Panel says SHIP (rubric 4.0 or more)', ok: !!state.rubric && state.rubric.verdict === 'SHIP' && avg >= 4, detail: state.rubric ? `${avg.toFixed(1)} · ${state.rubric.verdict}` : 'run Review document' },
+    { label: 'Your reader does not say no', ok: !!state.reader && state.reader.decision !== 'no', detail: state.reader ? `would ${{ yes: 'say yes', ask: 'ask first', no: 'say no' }[state.reader.decision]}` : 'run Read as my reader' },
+  ];
+}
+/** Run `go` if the document passes the gate; otherwise show the checklist and let the writer decide. */
+function gate(go, what) {
+  const checks = shipChecks(), failing = checks.filter(c => !c.ok);
+  if (!failing.length) return go();
+  const m = $('#import'); m.replaceChildren();
+  const box = el('div', { className: 'box' });
+  box.append(el('h2', { textContent: `Ready to ${what || 'share'}?` }), el('p', { className: 'note', textContent: `${failing.length} of ${checks.length} checks are not met. You can go ahead anyway; this is the list a tough reviewer will run in their head.` }));
+  const list = el('div', { className: 'gate' });
+  for (const c of checks) { const row = el('div', { className: 'grow ' + (c.ok ? 'ok' : 'no') }); row.append(el('i', { textContent: c.ok ? '\u2713' : '\u2717' }), el('span', { textContent: c.label }), el('small', { textContent: c.detail })); list.append(row); }
+  const foot = el('div', { className: 'foot' });
+  const back = el('button', { type: 'button', className: 'btn primary', textContent: 'Keep working' }); back.onclick = () => { m.hidden = true; };
+  const anyway = el('button', { type: 'button', className: 'btn', textContent: (what ? what[0].toUpperCase() + what.slice(1) : 'Share') + ' anyway' }); anyway.onclick = () => { m.hidden = true; state.shipped = { at: Date.now(), checks: checks.map(c => c.ok) }; save(); go(); };
+  foot.append(anyway, back); box.append(list, foot); m.append(box); m.hidden = false;
+}
+function showGatePop(anchor) {
+  const pop = $('#pop'); clearTimeout(popTimer); popId = 'gate';
+  pop.className = 'pop rubric'; pop.replaceChildren();
+  const checks = shipChecks();
+  const head = el('div', { className: 'card-head' }); head.append(el('b', { textContent: 'Ready to ship?' })); pop.append(head);
+  const list = el('div', { className: 'gate' });
+  for (const c of checks) { const row = el('div', { className: 'grow ' + (c.ok ? 'ok' : 'no') }); row.append(el('i', { textContent: c.ok ? '\u2713' : '\u2717' }), el('span', { textContent: c.label }), el('small', { textContent: c.detail })); list.append(row); }
+  pop.append(list);
+  placePop(pop, anchor);
 }
 
 /** Put every draft into its section: empty sections are filled, written ones get the draft appended so nothing is lost. */
@@ -1522,7 +1579,7 @@ document.addEventListener('mouseover', e => {
   clearTimeout(popTimer); popTimer = setTimeout(hidePop, 300);
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') hidePop(); });
-document.addEventListener('mousedown', e => { if (!e.target.closest('#pop') && !e.target.closest('.hbadge') && !e.target.closest('mark[data-comment]') && !e.target.closest('#lessons-btn') && !e.target.closest('#rubric-btn') && !e.target.closest('#claims-btn') && !e.target.closest('#history-btn') && !e.target.closest('#reader-btn') && !e.target.closest('#notes-btn') && !e.target.closest('#slop-btn')) hidePop(); });
+document.addEventListener('mousedown', e => { if (!e.target.closest('#pop') && !e.target.closest('.hbadge') && !e.target.closest('mark[data-comment]') && !e.target.closest('#lessons-btn') && !e.target.closest('#rubric-btn') && !e.target.closest('#claims-btn') && !e.target.closest('#history-btn') && !e.target.closest('#reader-btn') && !e.target.closest('#notes-btn') && !e.target.closest('#slop-btn') && !e.target.closest('#gate-btn')) hidePop(); });
 $('#scroll').addEventListener('scroll', hidePop, { passive: true });
 function toggleResolved(c) {
   c.resolved = !c.resolved;
@@ -1562,7 +1619,8 @@ function payload(opts = {}) {
     mode: state.mode, current: state.current, title: state.title, notes: state.notes, audience: state.audience || '', purpose: state.purpose || '', brief: state.brief || {}, style: styleRules || DEFAULT_STYLE,
     attachments: sendFiles ? state.attachments.map(a => a.kind === 'image' ? { name: a.name, kind: 'image', mime: a.mime, data: images[a.id] || '' } : { name: a.name, kind: a.kind, text: a.text || '' }).filter(a => a.kind !== 'image' || a.data) : [],
     template: { name: tpl().name, sections: tpl().sections },
-    sections: sections().map(({ title, text }) => ({ title, text: scope === 'section' && title !== state.current ? '' : text })),
+    sections: sections().map(({ title, text }) => ({ title, text: scope === 'section' && title !== state.current ? '' : scope === 'changed' && !changedSections().includes(title) ? '' : text })),
+    earlier: scope === 'changed' ? state.comments.filter(c => !c.resolved && c.kind !== 'draft' && changedSections().includes(c.section)).map(c => ({ id: c.id, kind: c.kind, section: c.section, quote: c.quote || '', body: c.body })) : [],
     history: history.concat(last ? [{ role: last.role, content: last.content }] : []),
     feedback: feedbackText || '',
   };
@@ -1570,6 +1628,7 @@ function payload(opts = {}) {
 function setBusy(on) { busy = on; $('#send').disabled = on; $('#review-all').disabled = on; $('#coach').classList.toggle('busy', on); doc.refreshCoach(); }
 async function send(text, opts = {}) {
   if (busy || !text.trim()) return;
+  if (opts.scope === 'changed' && !changedSections().length) { state.chat.push({ role: 'assistant', content: 'Nothing has changed since the last review. Edit a section, then ask again.', done: true, at: Date.now() }); setThread(true); renderLog(); return; }
   setBusy(true);
   const section = state.current;
   state.chat.push({ role: 'user', content: text.trim(), hidden: !!opts.hidden, label: opts.label || '', at: Date.now() });
@@ -1609,6 +1668,8 @@ async function send(text, opts = {}) {
     const weights = (m.content.match(/^Weight:.*$/gm) || []).map(x => x.trim());
     if (weights.length) { try { const cur = (await store.feedback.get()) || ''; const next = (cur.trim() + '\n\n' + new Date().toISOString().slice(0, 10) + ' · ' + (state.title || 'Untitled') + '\n' + weights.join('\n')).trim(); await store.feedback.set(next); feedbackText = next; } catch (e) { console.warn(e); } }
   }
+  if (!opts.hidden && lastAddressed) m.addressedCount = lastAddressed;
+  if (!opts.hidden && (m.added || lastAddressed) && state.mode === 'review') { const sent = opts.scope === 'section' ? [section] : opts.scope === 'changed' ? changedSections() : sections().map(x => x.title); for (const t of sent) { const sec = sections().find(x => x.title === t); if (sec) (state.reviewed ||= {})[t] = sec.text; } }
   if (!opts.hidden && m.added) {
     const english = state.comments.slice(before).filter(c => c.kind === 'english').length;
     state.reviewStats.push({ at: Date.now(), english, notes: m.added, avg: state.rubric && state.rubric.at > Date.now() - 60000 ? rubricAvg() : null });
@@ -1628,7 +1689,9 @@ async function mockCoach(text, emit) {
   const sec = state.current, body = sectionText(sec).replace(/^\s*([-*+]|\d+\.)\s+/gm, '').replace(/[*_`#>\[\]]/g, '');
   const w = body.split(/\s+/).filter(Boolean);
   const q1 = w.slice(0, 6).join(' '), q2 = w.slice(-4).join(' ');
-  const reply = /Draft the document from my notes/.test(text)
+  const reply = /Review what changed since your last review/.test(text)
+        ? (() => { const open = state.comments.filter(c => !c.resolved && c.kind !== 'draft' && changedSections().includes(c.section)); return `Your edits settle ${Math.min(1, open.length)} earlier note.\n\n${open[0] ? `<addressed id="${open[0].id}">The new text gives the number.</addressed>` : ''}\n\n<note type="question" severity="low">Did the change alter the rollout plan?</note>\n\nNext: re-run the panel.`; })()
+      : /Draft the document from my notes/.test(text)
         ? `Here is a first draft from your notes. Three gaps to fill first: the client names, the Redis cluster cost, and who owns the rollout.\n\n${tpl().sections.slice(0, 4).map(s => `<draft section="${s.title}">${s.title === 'Context and problem' ? 'Three of 240 clients send about 70% of Payments API traffic at month end. p99 latency rises from 200 ms to 2.1 s for every client, and the on-call engineer throttles by hand. Three incidents last quarter (INC-412, INC-418, INC-433) came from this.' : s.title === 'Proposed design' ? 'A per-client token bucket in Redis gives each client 500 requests per second. The API gateway checks the bucket and answers 429 with Retry-After when it is empty. If Redis is slow, the limiter fails open. [TODO: Redis timeout before failing open]' : `[TODO: ${s.hint}]`}</draft>`).join('\n')}`
       : /interview/i.test(text)
     ? `Let us start with the "${sec}" section.\n\nWhen this is done, what will be true that is not true today? One sentence is enough. For example: "No single client can slow down the others."`
@@ -2090,7 +2153,7 @@ function openPublish() {
   };
   foot.append(err, cancel, go); box.append(lp, lt, le, lk, note, foot); m.append(box); m.hidden = false;
 }
-$('#publish-btn').onclick = openPublish;
+$('#publish-btn').onclick = () => gate(openPublish, 'publish');
 $('#home').onclick = () => showView('library');
 $('#ws-crumb').onclick = () => showView('library');
 store.ws.info().then(i => { $('#ws-crumb').textContent = i.name; }).catch(() => {});
@@ -2260,14 +2323,16 @@ $('#ask').onsubmit = e => { e.preventDefault(); if (busy) return; send(input.val
 input.oninput = () => grow(input, 140);
 input.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); $('#ask').requestSubmit(); } };
 $('#review-all').onclick = () => { setMode('review'); send(panelReviewPrompt(), { label: 'Panel review: ' + (tpl().readers || ['Staff peer', 'Skeptical VP', 'Future maintainer']).slice(0, 3).join(', ') }); };
-$('#copy').onclick = async () => {
+$('#copy').onclick = () => gate(copyMarkdown, 'copy');
+async function copyMarkdown() {
   const b = $('#copy');
   $('#export').open = false;
   try { await navigator.clipboard.writeText(toMarkdown()); b.textContent = 'Copied'; }
   catch { b.textContent = 'Copy failed'; }
   setTimeout(() => b.textContent = 'Copy as Markdown', 1500);
-};
-$('#download').onclick = async () => {
+}
+$('#download').onclick = () => gate(downloadMarkdown, 'save');
+async function downloadMarkdown() {
   const b = $('#download');
   $('#export').open = false;
   try {
@@ -2275,7 +2340,7 @@ $('#download').onclick = async () => {
     b.textContent = 'Saved to Downloads'; b.title = path;
   } catch (e) { b.textContent = 'Save failed'; b.title = String(e); }
   setTimeout(() => b.textContent = 'Save as .md to Downloads', 2500);
-};
+}
 $('#new').onclick = () => createDoc('', state.templateId);
 function renderAll() { sel.value = state.templateId; syncPaper(); renderOutline(); renderCoachBar(); renderLog(); setFocus(!!state.focus); renderComments(); renderContext(); setThread(!!state.threadOpen && state.chat.length > 0); }
 $('#thread-hide').onclick = () => setThread(false);

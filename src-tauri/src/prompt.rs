@@ -21,7 +21,7 @@ pub fn system_for(mode: &str, scope: &str, local: bool) -> String {
         "rehearse" => (cut("MODE rehearse", "MODE review:"), format!("Tag formats (use them exactly, never inside code fences):\n{}{}", cut("<grade value=\"1-5\">One line", "<diagram title="), cut("<draft section=\"Exact section title\">", "Outside tags"))),
         _ => (cut("MODE review:", "Tag formats"), cut("Tag formats", "----- THE GUIDE")),
     };
-    let scope_note = if scope == "section" { "\nOnly the current section's text is in <document>; the other sections exist (their titles are listed, marked omitted) but were not sent. Do not call them empty or missing, and do not quote them.\n" } else { "" };
+    let scope_note = if scope == "section" || scope == "changed" { "\nOnly the current section's text is in <document>; the other sections exist (their titles are listed, marked omitted) but were not sent. Do not call them empty or missing, and do not quote them.\n" } else { "" };
     let guide = if mode == "review" && !local { GUIDE } else { GUIDE_SHORT };
     format!("{core}{rules}\n{tags}\n{}\n{scope_note}\n----- THE GUIDE -----\n{guide}", cut("Outside tags", "----- THE GUIDE"))
 }
@@ -43,10 +43,12 @@ fn render_context(body: &Value) -> String {
     let guide: Vec<String> = tpl["sections"].as_array().unwrap_or(&none).iter()
         .map(|x| format!("- {}: {} Reviewers check: {}", s(&x["title"]), s(&x["hint"]), s(&x["checks"])))
         .collect();
-    let section_only = s(&body["scope"]) == "section";
+    let scope = s(&body["scope"]);
+    let section_only = scope == "section";
     let current = s(&body["current"]);
+    let included = |x: &Value| if scope == "changed" { !s(&x["text"]).trim().is_empty() } else if section_only { s(&x["title"]) == current } else { true };
     let sections: Vec<String> = body["sections"].as_array().unwrap_or(&none).iter()
-        .map(|x| if section_only && s(&x["title"]) != current { format!("<section title=\"{}\" omitted=\"yes\"/>", s(&x["title"])) } else { format!("<section title=\"{}\">\n{}\n</section>", s(&x["title"]), or_empty(s(&x["text"]))) })
+        .map(|x| if !included(x) { format!("<section title=\"{}\" omitted=\"yes\"/>", s(&x["title"])) } else { format!("<section title=\"{}\">\n{}\n</section>", s(&x["title"]), or_empty(s(&x["text"]))) })
         .collect();
     let title = match s(&body["title"]) { "" => "Untitled", t => t };
     let mode = match s(&body["mode"]) { "" => "review", m => m };
@@ -56,9 +58,13 @@ fn render_context(body: &Value) -> String {
         or_empty(s(&b["ask"])), or_empty(s(&body["audience"])), or_empty(s(&body["purpose"])), or_empty(s(&b["objection"])),
         or_empty(s(&b["deadline"])), or_empty(s(&b["numbers"])), or_empty(s(&b["nongoals"])), or_empty(s(&body["style"]))
     );
+    let earlier: Vec<String> = body["earlier"].as_array().unwrap_or(&none).iter()
+        .map(|n| format!("<note id=\"{}\" type=\"{}\" section=\"{}\" quote=\"{}\">{}</note>", s(&n["id"]), s(&n["kind"]), s(&n["section"]), s(&n["quote"]), s(&n["body"])))
+        .collect();
+    let earlier = if earlier.is_empty() { String::new() } else { format!("\n<earlier_notes>\n{}\n</earlier_notes>", earlier.join("\n")) };
     format!(
-        "<template name=\"{}\">\n{}\n</template>\n{}\n<document title=\"{}\">\n<raw_notes>\n{}\n</raw_notes>\n{}\n</document>\n<current_section>{}</current_section>\n<mode>{}</mode>",
-        s(&tpl["name"]), guide.join("\n"), audience, title, or_empty(s(&body["notes"])), sections.join("\n"), s(&body["current"]), mode
+        "<template name=\"{}\">\n{}\n</template>\n{}\n<document title=\"{}\">\n<raw_notes>\n{}\n</raw_notes>\n{}\n</document>{}\n<current_section>{}</current_section>\n<mode>{}</mode>",
+        s(&tpl["name"]), guide.join("\n"), audience, title, or_empty(s(&body["notes"])), sections.join("\n"), earlier, s(&body["current"]), mode
     )
 }
 
@@ -118,6 +124,16 @@ mod tests {
         let body = json!({"scope": "section", "current": "B", "sections": [{"title": "A", "text": "aaa"}, {"title": "B", "text": "bbb"}], "template": {"name": "t", "sections": []}, "history": [{"role": "user", "content": "x"}]});
         let p = build(&body);
         assert!(p.contains("<section title=\"A\" omitted=\"yes\"/>") && p.contains("bbb") && !p.contains("aaa"));
+    }
+
+    #[test]
+    fn changed_scope_sends_edited_sections_and_earlier_notes() {
+        let body = json!({"scope": "changed", "current": "B", "sections": [{"title": "A", "text": ""}, {"title": "B", "text": "new text"}], "template": {"name": "t", "sections": []},
+            "earlier": [{"id": "n1", "kind": "fact", "section": "B", "quote": "old words", "body": "needs a number"}], "history": [{"role": "user", "content": "Review what changed."}]});
+        let p = build(&body);
+        assert!(p.contains("<section title=\"A\" omitted=\"yes\"/>") && p.contains("new text"));
+        assert!(p.contains("<earlier_notes>") && p.contains("id=\"n1\""));
+        assert!(system_for("review", "changed", false).contains("marked omitted"));
     }
 
     #[test]
