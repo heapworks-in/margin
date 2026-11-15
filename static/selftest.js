@@ -232,6 +232,29 @@
     ok('meta carries ship readiness', typeof meta().ship === 'number');
   });
 
+  await step('find, replace, align', async () => {
+    showView('doc');
+    openFind(); findQ.value = 'redis'; findUpdate();
+    const st = doc.findState();
+    ok('find counts matches', st.matches.length >= 2 && /of/.test(findCount.textContent), findCount.textContent);
+    const first = doc.editor.state.selection.from; findStep(1);
+    ok('next moves the selection', doc.editor.state.selection.from !== first);
+    ok('matches are highlighted', document.querySelectorAll('.ProseMirror .find-hit').length >= 2);
+    $('#find-r').value = 'Valkey'; const n = doc.findReplaceAll('Valkey');
+    ok('replace all rewrites every match', n >= 2 && !/redis/i.test(toMarkdown()) && /Valkey/.test(toMarkdown()), n);
+    closeFind();
+    ok('find bar closes and clears', findBar.hidden && document.querySelectorAll('.ProseMirror .find-hit').length === 0);
+    doc.alignAll('justify');
+    ok('justify applies to blocks', document.querySelectorAll('.ProseMirror p[style*="justify"]').length >= 2);
+    ok('alignment survives a round trip', JSON.stringify(doc.json()).includes('"align":"justify"'));
+    doc.alignAll('left');
+    ok('left clears the attribute', !JSON.stringify(doc.json()).includes('"align":"justify"'));
+    showView('notes'); notesBox().value = 'alpha beta alpha'; state.notes = notesBox().value; openFind(); findQ.value = 'alpha'; findUpdate();
+    ok('find counts in notes', /2 in notes/.test(findCount.textContent), findCount.textContent);
+    findStep(1); ok('find selects in notes', notesBox().selectionEnd - notesBox().selectionStart === 5);
+    closeFind(); showView('doc');
+  });
+
   await step('review packet and outcome', async () => {
     const pk = reviewPacket();
     ok('packet has brief, checks, rubric, claims and the document', ['## Brief', '## Ship checks', '## Panel rubric', '## Claims and sources', '## Context and problem'].every(h => pk.includes(h)));

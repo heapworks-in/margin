@@ -103,6 +103,8 @@ The status bar's **Ship n/5** is the gate: no high-severity notes open, every cl
 
 ## 12. Keyboard and shortcuts
 
+- **⌘F** finds in the document (or in Notes): matches are highlighted, Enter and Shift-Enter step through them, **Replace** opens replace-one / replace-all. Esc closes.
+- **Alignment**: select text and use the toolbar's left / center / right / justify buttons for that block, or ⌘K → *Justify the whole document*. Alignment stays in the document; the Markdown export has no way to carry it.
 - **⌘K** opens the command palette: every coach action, Review document, Ship checks, Slop, the packet, publishing, views, sections, and the tour. Type to filter, Enter to run.
 - **Accept** on a note can be undone from the "Fixed. Undo" toast for a few seconds (⌘Z in the text also works).
 - **⌘\\** toggles focus mode. **Esc** closes any popover.

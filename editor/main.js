@@ -124,6 +124,69 @@ function enter(editor, pos, node) {
   view.focus()
 }
 
+/* ---------- find in the document: matches as decorations, one of them current ---------- */
+const findKey = { key: 'find' }
+function findMatches(doc, query) {
+  const out = []
+  if (!query) return out
+  const q = query.toLowerCase()
+  doc.descendants((node, pos) => {
+    if (!node.isTextblock) return
+    let text = ''; const segs = []
+    node.forEach((child, offset) => { if (child.isText) { segs.push({ from: pos + 1 + offset, start: text.length, len: child.text.length }); text += child.text } else text += ' ' })
+    const low = text.toLowerCase(); let i = low.indexOf(q)
+    while (i >= 0) {
+      const at = idx => { const s = segs.find(s => idx >= s.start && idx <= s.start + s.len); return s ? s.from + (idx - s.start) : null }
+      const from = at(i), to = at(i + q.length)
+      if (from != null && to != null && to > from) out.push({ from, to })
+      i = low.indexOf(q, i + Math.max(1, q.length))
+    }
+    return false
+  })
+  return out
+}
+const Find = Extension.create({
+  name: 'find',
+  addProseMirrorPlugins() {
+    return [new Plugin({
+      state: {
+        init: () => ({ query: '', matches: [], index: -1 }),
+        apply(tr, prev) {
+          const meta = tr.getMeta(findKey)
+          const query = meta && 'query' in meta ? meta.query : prev.query
+          const matches = query && (meta || tr.docChanged) ? findMatches(tr.doc, query) : query ? prev.matches : []
+          let index = meta && 'index' in meta ? meta.index : prev.index
+          if (index >= matches.length) index = matches.length - 1
+          return { query, matches, index }
+        },
+      },
+      props: {
+        decorations(state) {
+          const { matches, index } = this.getState(state)
+          if (!matches.length) return DecorationSet.empty
+          return DecorationSet.create(state.doc, matches.map((m, i) => Decoration.inline(m.from, m.to, { class: 'find-hit' + (i === index ? ' current' : '') })))
+        },
+      },
+    })]
+  },
+})
+/* ---------- alignment: left, center, right, justify on paragraphs and headings ---------- */
+const Align = Extension.create({
+  name: 'align',
+  addGlobalAttributes() {
+    return [{ types: ['paragraph', 'heading'], attributes: { align: {
+      default: null,
+      parseHTML: el => el.style.textAlign || null,
+      renderHTML: a => a.align ? { style: `text-align:${a.align}` } : {},
+    } } }]
+  },
+  addCommands() {
+    return {
+      setAlign: align => ({ commands }) => ['paragraph', 'heading'].every(t => commands.updateAttributes(t, { align: align === 'left' ? null : align })),
+    }
+  },
+})
+
 const BlockKeys = Extension.create({
   name: 'blockKeys',
   addKeyboardShortcuts() {
@@ -448,14 +511,15 @@ function toolbar() {
     ['S', 'strike', 'Strikethrough ⌘⇧X', c => c.toggleStrike()],
     ['</>', 'code', 'Code ⌘E', c => c.toggleCode()],
   ].map(([label, name, title, run]) => { const b = mk(label, 'b-' + name, title); b.dataset.name = name; b._run = run; return b })
+  const aligns = [['⟸', 'left', 'Align left'], ['⇔', 'center', 'Center'], ['⟹', 'right', 'Align right'], ['☰', 'justify', 'Justify']].map(([label, name, title]) => { const b = mk(label, 'b-al b-al-' + name, title); b.dataset.align = name; return b })
   const link = mk('Link', 'b-link', 'Link ⌘K'); link.dataset.name = 'link'
-  row.append(ask, draw, turn, ...marks, link)
+  row.append(ask, draw, turn, ...marks, ...aligns, link)
   const linkRow = document.createElement('form'); linkRow.className = 'bubble-link'; linkRow.hidden = true; linkRow.noValidate = true
   const input = document.createElement('input'); input.type = 'text'; input.placeholder = 'Paste a link and press Enter'; input.spellcheck = false
   const remove = mk('Remove', 'b-remove')
   linkRow.append(input, remove)
   el.append(row, linkRow)
-  return { el, turn, marks, link, ask, draw, linkRow, input, remove }
+  return { el, turn, marks, aligns, link, ask, draw, linkRow, input, remove }
 }
 
 /** Empty skeleton: one section heading and an empty paragraph per title. */
@@ -542,6 +606,8 @@ export function create({ element, content, hintFor, onChange, onSelect, onAsk, o
       PasteMarkdown,
       BlockKeys,
       Guides(hintFor),
+      Find,
+      Align,
     ],
     content: content || skeleton([]),
     onUpdate: () => onChange(),
@@ -570,6 +636,7 @@ export function create({ element, content, hintFor, onChange, onSelect, onAsk, o
   editor.on('blur', () => { if (!bar.el.contains(document.activeElement)) setTimeout(() => { if (!bar.el.contains(document.activeElement)) { bar.el.hidden = true; bar.linkRow.hidden = true } }, 0) })
   ;(element.closest('.scroll') || window).addEventListener('scroll', () => { if (!bar.el.hidden) placeBar() }, { passive: true })
   bar.marks.forEach(b => { b.onmousedown = e => { e.preventDefault(); b._run(editor.chain().focus()).run() } })
+  bar.aligns.forEach(b => { b.onmousedown = e => { e.preventDefault(); editor.chain().focus().setAlign(b.dataset.align).run() } })
   bar.turn.onmousedown = e => {
     e.preventDefault()
     popup(bar.turn, [{ head: 'Turn into' }, ...turnRows()], r => applyBlock(editor, r.block))
@@ -652,6 +719,45 @@ export function create({ element, content, hintFor, onChange, onSelect, onAsk, o
     editor,
     hovered: () => grab.hovered(),
     toolbar: bar.el,
+    /** Find: set the query (returns the match count), step through matches, replace. */
+    find(query) {
+      const { state, view } = editor
+      const matches = findMatches(state.doc, query)
+      let index = -1
+      if (matches.length) { const at = state.selection.from; index = Math.max(0, matches.findIndex(m => m.from >= at)); if (index < 0) index = 0 }
+      view.dispatch(state.tr.setMeta(findKey, { query, index }))
+      if (index >= 0) this.findGo(index)
+      return matches.length
+    },
+    findState() { const s = editor.state.plugins.find(p => p.spec.state && p.getState(editor.state) && 'matches' in p.getState(editor.state)); return s ? s.getState(editor.state) : { query: '', matches: [], index: -1 } },
+    findGo(index) {
+      const st = this.findState(); if (!st.matches.length) return
+      const i = (index + st.matches.length) % st.matches.length, m = st.matches[i]
+      editor.view.dispatch(editor.state.tr.setMeta(findKey, { index: i }).setSelection(TextSelection.create(editor.state.doc, m.from, m.to)).scrollIntoView())
+      return i
+    },
+    findNext(dir = 1) { const st = this.findState(); return this.findGo(st.index + dir) },
+    findReplace(text) {
+      const st = this.findState(); if (st.index < 0 || !st.matches[st.index]) return false
+      const m = st.matches[st.index]
+      editor.view.dispatch(editor.state.tr.insertText(text, m.from, m.to))
+      this.findGo(st.index)
+      return true
+    },
+    findReplaceAll(text) {
+      const st = this.findState(); if (!st.matches.length) return 0
+      let tr = editor.state.tr
+      for (const m of [...st.matches].reverse()) tr = tr.insertText(text, m.from, m.to)
+      editor.view.dispatch(tr)
+      return st.matches.length
+    },
+    findClear() { editor.view.dispatch(editor.state.tr.setMeta(findKey, { query: '', index: -1 })) },
+    /** Alignment of every paragraph and heading at once. */
+    alignAll(align) {
+      let tr = editor.state.tr
+      editor.state.doc.descendants((node, pos) => { if (node.type.name === 'paragraph' || node.type.name === 'heading') tr = tr.setNodeMarkup(pos, undefined, { ...node.attrs, align: align === 'left' ? null : align }) })
+      editor.view.dispatch(tr)
+    },
     html: () => editor.getHTML(),
     /** Add an empty section at the start or the end of the document. */
     addSectionAt(title, where) {

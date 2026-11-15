@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Margin</title>
 <link href="vendor/fonts/fonts.css" rel="stylesheet">
-<script src="vendor/editor.js?v=70"></script>
+<script src="vendor/editor.js?v=71"></script>
 <style>
 :root{
   color-scheme:dark;
@@ -408,6 +408,19 @@ mark.c-mark.active{box-shadow:0 0 0 2px var(--accent-soft);filter:saturate(1.4)}
 .gate .grow i{font-style:normal;font-weight:700}
 .gate .ok i{color:var(--green)}.gate .no i{color:var(--fact)}
 .gate small{color:var(--muted)}
+.findbar{position:fixed;top:56px;right:20px;z-index:80;display:flex;align-items:center;gap:4px;background:var(--panel);border:1px solid var(--line-strong);border-radius:10px;padding:6px 8px;box-shadow:0 16px 40px -16px #000;font-size:12.5px}
+.findbar[hidden]{display:none}
+.findbar input{width:200px;background:var(--canvas);border:1px solid var(--line-strong);border-radius:6px;color:var(--ink);font:13px var(--ui);padding:4px 8px;outline:none}
+.findbar input:focus{border-color:var(--accent)}
+.findbar .count{color:var(--muted);min-width:56px;text-align:center;font-variant-numeric:tabular-nums}
+.findbar button{background:none;border:1px solid var(--line-strong);border-radius:6px;color:var(--ink-2);font:12.5px var(--ui);padding:3px 8px;cursor:pointer}
+.findbar button:hover{color:var(--ink);border-color:var(--accent)}
+.findbar .rep{display:inline-flex;gap:4px;align-items:center}
+.findbar .rep[hidden]{display:none}
+.findbar .rep input{width:160px}
+.ProseMirror .find-hit{background:#F2B64B55;border-radius:2px}
+.ProseMirror .find-hit.current{background:#F2B64B;color:#111}
+.bubble .b-al{font-size:12px;letter-spacing:0}
 .advance{font-size:13px;color:var(--ink-2);display:flex;flex-direction:column;gap:6px;background:var(--accent-soft);border-radius:8px;padding:8px 10px}
 .ledger{display:flex;flex-direction:column;gap:4px;max-height:40vh;overflow:auto;margin-top:6px}
 .lrow{display:flex;align-items:baseline;gap:10px;font-size:12.5px;padding:4px 6px;border-radius:6px;cursor:pointer}
@@ -558,6 +571,15 @@ html[data-demo] *,html[data-demo] *::before,html[data-demo] *::after{transition:
       <div class="chips" id="chips"></div>
     </div>
   </details>
+  <form id="findbar" class="findbar" hidden autocomplete="off">
+    <input type="text" id="find-q" placeholder="Find in document" aria-label="Find">
+    <span class="count" id="find-count"></span>
+    <button type="button" id="find-prev" title="Previous (⇧↩)">↑</button>
+    <button type="button" id="find-next" title="Next (↩)">↓</button>
+    <button type="button" id="find-toggle" title="Replace">Replace</button>
+    <span class="rep" id="find-rep" hidden><input type="text" id="find-r" placeholder="Replace with"><button type="button" id="find-rep1">Replace</button><button type="button" id="find-repall">All</button></span>
+    <button type="button" id="find-close" title="Close (Esc)">×</button>
+  </form>
   <details class="dd" id="export">
     <summary class="tool">Export</summary>
     <div class="dd-menu">
@@ -1398,6 +1420,8 @@ function commands() {
   out.push({ title: 'Save the review packet', hint: 'Markdown with rubric, claims and notes', run: savePacket });
   out.push({ title: 'Copy as Markdown', hint: 'the document', run: () => $('#copy').click() });
   out.push({ title: 'Publish to Confluence', hint: 'create or update the page', run: () => $('#publish-btn').click() });
+  out.push({ title: 'Find in document', hint: '\u2318F \u00b7 find and replace', run: openFind });
+  for (const [a, t] of [['left', 'Align the whole document left'], ['justify', 'Justify the whole document'], ['center', 'Center every block']]) out.push({ title: t, hint: 'alignment', run: () => { doc.alignAll(a); save(); } });
   out.push({ title: 'Focus mode', hint: 'hide everything but the text (\u2318\\)', run: () => setFocus(!state.focus) });
   for (const [v, t] of [['doc', 'Document'], ['notes', 'Notes'], ['guide', 'Writing guide'], ['help', 'Help']]) out.push({ title: `Go to ${t}`, hint: 'view', run: () => showView(v) });
   out.push({ title: 'Library', hint: 'all documents in the workspace', run: () => showView('library') });
@@ -1457,6 +1481,30 @@ function tour(force) {
   skip.onclick = end;
   show();
 }
+
+/* ---------- find and replace (⌘F): the document editor, or the Notes box ---------- */
+const findBar = $('#findbar'), findQ = $('#find-q'), findCount = $('#find-count');
+function findUpdate() {
+  if (!$('#notes').hidden) { const ta = notesBox(), q = findQ.value.toLowerCase(); if (!q) { findCount.textContent = ''; return; } const n = q ? (ta.value.toLowerCase().split(q).length - 1) : 0; findCount.textContent = n ? `${n} in notes` : 'none'; return; }
+  const n = doc.find(findQ.value);
+  const st = doc.findState();
+  findCount.textContent = findQ.value ? (n ? `${st.index + 1} of ${n}` : 'none') : '';
+}
+function findStep(dir) {
+  if (!$('#notes').hidden) { const ta = notesBox(), q = findQ.value.toLowerCase(); if (!q) return; const hay = ta.value.toLowerCase(); let i = dir > 0 ? hay.indexOf(q, ta.selectionEnd) : hay.lastIndexOf(q, Math.max(0, ta.selectionStart - 1)); if (i < 0) i = dir > 0 ? hay.indexOf(q) : hay.lastIndexOf(q); if (i >= 0) { ta.focus(); ta.setSelectionRange(i, i + q.length); const line = ta.value.slice(0, i).split('\n').length; $('#desk').scrollTop = Math.max(0, line * 24 - innerHeight / 2); findQ.focus(); } return; }
+  const i = doc.findNext(dir); const st = doc.findState(); if (i != null) findCount.textContent = `${i + 1} of ${st.matches.length}`;
+}
+function openFind() { if ($('#paper').hidden && $('#notes').hidden) showView('doc'); findBar.hidden = false; findQ.focus(); findQ.select(); if (findQ.value) findUpdate(); }
+function closeFind() { findBar.hidden = true; doc.findClear(); findCount.textContent = ''; if (!$('#paper').hidden) doc.editor.commands.focus(); }
+findQ.oninput = findUpdate;
+findBar.onsubmit = e => { e.preventDefault(); findStep(1); };
+findQ.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); findStep(e.shiftKey ? -1 : 1); } if (e.key === 'Escape') { e.preventDefault(); closeFind(); } };
+$('#find-prev').onclick = () => findStep(-1); $('#find-next').onclick = () => findStep(1); $('#find-close').onclick = closeFind;
+$('#find-toggle').onclick = () => { const r = $('#find-rep'); r.hidden = !r.hidden; if (!r.hidden) $('#find-r').focus(); };
+$('#find-rep1').onclick = () => { if (!$('#notes').hidden) { const ta = notesBox(); if (ta.selectionEnd > ta.selectionStart) { ta.setRangeText($('#find-r').value, ta.selectionStart, ta.selectionEnd, 'end'); state.notes = ta.value; save(); findStep(1); } return; } if (doc.findReplace($('#find-r').value)) { save(); findUpdate(); } };
+$('#find-repall').onclick = () => { const q = findQ.value; if (!q) return; if (!$('#notes').hidden) { const ta = notesBox(); const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'); ta.value = ta.value.replace(re, $('#find-r').value); state.notes = ta.value; save(); findUpdate(); return; } const n = doc.findReplaceAll($('#find-r').value); if (n) { save(); findUpdate(); flashStatus(`Replaced ${n}.`); } };
+$('#find-r').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); $('#find-rep1').click(); } if (e.key === 'Escape') { e.preventDefault(); closeFind(); } };
+document.addEventListener('keydown', e => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f' && !e.shiftKey) { if ($('#paper').hidden && $('#notes').hidden) return; e.preventDefault(); openFind(); } });
 
 /* ---------- ship gate: is this document ready to leave the room? ---------- */
 function shipChecks() {
