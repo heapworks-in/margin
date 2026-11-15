@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Margin</title>
 <link href="vendor/fonts/fonts.css" rel="stylesheet">
-<script src="vendor/editor.js?v=69"></script>
+<script src="vendor/editor.js?v=70"></script>
 <style>
 :root{
   color-scheme:dark;
@@ -268,7 +268,7 @@ button:disabled{opacity:.45;cursor:default}
 .doc-sub{display:none}
 .notes-head{font:700 39px/1.15 var(--ui);letter-spacing:-.025em;margin:0 0 4px}
 .notes-sub{color:var(--muted);font-size:13px;margin:0 0 22px;padding-bottom:18px;border-bottom:1px solid var(--line)}
-.notes-box{display:block;width:100%;border:0;resize:none;outline:none;background:none;font:15px/1.6 var(--ui);color:var(--ink);padding:0;min-height:40vh}
+.notes-box{display:block;width:100%;border:0;resize:none;outline:none;background:none;font:15px/1.6 var(--ui);color:var(--ink);padding:0 0 40vh;min-height:calc(100vh - 240px);overflow:hidden;box-sizing:border-box}
 .notes-box::placeholder{color:#4A4F58}
 .flash{animation:flash 1.4s ease-out}
 @keyframes flash{from{background:var(--accent-soft)}to{background:transparent}}
@@ -925,6 +925,7 @@ function showView(v) {
   if (v === 'settings') renderSettings();
   $('#paper').hidden = v !== 'doc';
   $('#notes').hidden = v !== 'notes';
+  if (v === 'notes') requestAnimationFrame(() => grow(notesBox()));
   $('#guide').hidden = v !== 'guide';
   $('#help').hidden = v !== 'help';
   document.querySelector('.app').classList.toggle('in-library', v === 'library' || v === 'settings');
@@ -1954,6 +1955,7 @@ async function openDoc(id) {
 }
 let workspaceDigest = '';
 async function refreshDigest() { try { workspaceDigest = state.id ? (await store.digest(state.id)) || '' : ''; } catch { workspaceDigest = ''; } }
+addEventListener('resize', () => { if (!$('#notes').hidden) grow(notesBox()); });
 let warmedAt = 0;
 function warmCoach(force) { if (!inApp) return; if (!force && Date.now() - warmedAt < 10 * 60000) return; warmedAt = Date.now(); window.__TAURI__.core.invoke('warm').catch(() => {}); }
 async function createDoc(title, templateId) {

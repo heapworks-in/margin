@@ -113,6 +113,10 @@
   });
 
   await step('notes and history', async () => {
+    showView('notes'); notesBox().value = Array.from({ length: 120 }, (_, i) => `note line ${i}`).join('\n'); state.notes = notesBox().value; grow(notesBox()); await wait(50);
+    ok('notes box has no inner scrollbar', notesBox().scrollHeight <= notesBox().clientHeight + 2, `${notesBox().scrollHeight} vs ${notesBox().clientHeight}`);
+    ok('notes box fills the page', notesBox().clientHeight >= innerHeight - 260, notesBox().clientHeight);
+    showView('doc');
     putText(NOTES, 'a note line', 'append');
     ok('note appended', state.notes.includes('a note line'));
     const desk = document.querySelector('#desk'); desk.scrollTop = 40; grow(notesBox());
