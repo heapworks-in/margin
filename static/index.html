@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Margin</title>
 <link href="vendor/fonts/fonts.css" rel="stylesheet">
-<script src="vendor/editor.js?v=71"></script>
+<script src="vendor/editor.js?v=73"></script>
 <style>
 :root{
   color-scheme:dark;
@@ -408,6 +408,11 @@ mark.c-mark.active{box-shadow:0 0 0 2px var(--accent-soft);filter:saturate(1.4)}
 .gate .grow i{font-style:normal;font-weight:700}
 .gate .ok i{color:var(--green)}.gate .no i{color:var(--fact)}
 .gate small{color:var(--muted)}
+.mic{flex:none;width:30px;height:30px;border-radius:7px;border:1px solid var(--line-strong);background:var(--raise);color:var(--muted);font-size:13px;cursor:pointer;display:grid;place-items:center}
+.mic:hover{color:var(--ink);border-color:var(--accent)}
+.mic.on{background:#3F1F27;border-color:var(--fact);color:var(--fact);animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{50%{box-shadow:0 0 0 4px #FF7B8633}}
+@media (prefers-reduced-motion:reduce){.mic.on{animation:none}}
 .findbar{position:fixed;top:56px;right:20px;z-index:80;display:flex;align-items:center;gap:4px;background:var(--panel);border:1px solid var(--line-strong);border-radius:10px;padding:6px 8px;box-shadow:0 16px 40px -16px #000;font-size:12.5px}
 .findbar[hidden]{display:none}
 .findbar input{width:200px;background:var(--canvas);border:1px solid var(--line-strong);border-radius:6px;color:var(--ink);font:13px var(--ui);padding:4px 8px;outline:none}
@@ -627,7 +632,8 @@ html[data-demo] *,html[data-demo] *::before,html[data-demo] *::after{transition:
         <button type="button" class="tool small" id="thread-show" title="Show the conversation">Conversation</button>
       </div>
       <div class="composer">
-        <textarea id="input" rows="1" placeholder="Ask the coach in any English… (press fn twice to dictate, then Reshape dictation)" aria-label="Message to coach"></textarea>
+        <button type="button" id="mic" class="mic" title="Dictate into the document (⌥D). Press again to stop.">●</button>
+          <textarea id="input" rows="1" placeholder="Ask the coach in any English…" aria-label="Message to coach"></textarea>
         <button type="submit" id="send" class="send" aria-label="Send">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 13V3M8 3L3.5 7.5M8 3l4.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
@@ -801,6 +807,9 @@ const store = inApp ? {
   style: { get: () => invoke('style_get'), set: text => invoke('style_set', { text }) },
   templates: { get: () => invoke('templates_get'), set: value => invoke('templates_set', { value }) },
   digest: exclude => invoke('workspace_digest', { exclude }),
+  transcribe: data => invoke('transcribe', { data }),
+  assist: (kind, text) => invoke('assist', { kind, text }),
+  whisper: () => invoke('whisper_info'),
   feedback: { get: () => invoke('feedback_get'), set: text => invoke('feedback_set', { text }) },
   history: { snapshot: (id, markdown, label) => invoke('doc_snapshot', { id, markdown, label }), list: id => invoke('history_list', { id }), read: (id, name) => invoke('history_read', { id, name }) },
   publish: (parentUrl, title, html, email, token, pageId) => invoke('confluence_publish', { parentUrl, title, html, email, token, pageId: pageId || null }),
@@ -823,12 +832,15 @@ const store = inApp ? {
   style: { get: async () => localStorage.getItem('docu-coach-style') || '', set: async text => localStorage.setItem('docu-coach-style', text) },
   templates: { get: async () => JSON.parse(localStorage.getItem('docu-coach-templates') || '{}'), set: async value => localStorage.setItem('docu-coach-templates', JSON.stringify(value)) },
   digest: async () => '',
+  transcribe: async () => 'so the payments api get slow at month end um because three clients send most of the traffic',
+  assist: async (kind, text) => kind === 'reshape' ? text.replace(/\b(um|uh|so)\b,?\s*/gi, '').replace(/api get/i, 'API gets').replace(/^./, c => c.toUpperCase()).replace(/\.?$/, '.') : (/\bget\b/.test(text) ? '<note quote="api get slow" fix="API gets slow" rule="subject-verb agreement">A singular subject takes a singular verb.</note>' : ''),
+  whisper: async () => ({ cli: null, model: null }),
   feedback: { get: async () => localStorage.getItem('docu-coach-feedback') || '', set: async text => localStorage.setItem('docu-coach-feedback', text) },
   history: { _k: id => 'docu-coach-history:' + id, snapshot: async function (id, markdown, label) { const l = JSON.parse(localStorage.getItem(this._k(id)) || '[]'); const name = `${Date.now()}-${label}.md`; l.unshift({ name, markdown, updated: Date.now(), size: markdown.length }); localStorage.setItem(this._k(id), JSON.stringify(l.slice(0, 20))); return name; }, list: async function (id) { return JSON.parse(localStorage.getItem(this._k(id)) || '[]').map(({ name, updated, size }) => ({ name, updated, size })); }, read: async function (id, name) { return (JSON.parse(localStorage.getItem(this._k(id)) || '[]').find(h => h.name === name) || {}).markdown || ''; } },
   publish: async () => { throw new Error('Publishing works in the app.'); },
   models: async () => ({ models: MODELS.map(id => ({ id, name: id })), current: 'claude-opus-5-5' }),
   agents: async () => [{ id: 'claude', name: 'Claude Code (bundled)', path: 'bundled with Margin; uses your Claude login', found: true }, { id: 'devin', name: 'Devin', path: '`devin` is not on your PATH', found: false }, { id: 'local', name: 'Local model (Ollama, LM Studio, llama.cpp\u2026)', path: 'Ollama is running at localhost:11434 with 2 models; no tokens used', found: true }, { id: 'custom', name: 'Custom ACP agent command', path: '', found: true }],
-  settings: { get: async () => ({ agent: 'claude', command: '', args: '', quickAgent: '', quickModel: '', model: 'claude-opus-5-5', effort: 'medium', skills: [], useMySettings: false, ...JSON.parse(localStorage.getItem('docu-coach-settings') || '{}') }), set: async function (v) { const cur = await this.get(); const next = { ...cur, ...v }; localStorage.setItem('docu-coach-settings', JSON.stringify(next)); return next; } },
+  settings: { get: async () => ({ agent: 'claude', command: '', args: '', quickAgent: '', quickModel: '', liveFix: true, cleanDictation: true, whisperModel: '', model: 'claude-opus-5-5', effort: 'medium', skills: [], useMySettings: false, ...JSON.parse(localStorage.getItem('docu-coach-settings') || '{}') }), set: async function (v) { const cur = await this.get(); const next = { ...cur, ...v }; localStorage.setItem('docu-coach-settings', JSON.stringify(next)); return next; } },
   confluence: async () => { throw new Error('Confluence import works in the app.'); },
   confluenceComments: async () => { throw new Error('Pulling comments works in the app.'); },
 };
@@ -993,7 +1005,7 @@ function buildPaper() {
 
   doc = DocEditor.create({
     element: host, content: state.docJson, hintFor,
-    onChange: () => { state.docJson = doc.json(); save(); renderOutline(); renderMeta(); scheduleComments(); },
+    onChange: () => { state.docJson = doc.json(); save(); renderOutline(); renderMeta(); scheduleComments(); scheduleLive(); },
     onSelect: () => { const t = doc.current(); if (t && doc.editor.isFocused) setCurrent(t); const id = doc.editor.isFocused ? doc.commentAtCursor() : null; if (id) { if (id !== popId) showPop(id); } else if (popId && !String(popId).startsWith('section:') && !$('#pop').matches(':hover')) hidePop(); },
     onAsk: text => { setFocus(false); setMode('review'); send(`In the "${state.current}" section, look at this part and tell me what to fix:\n\n"${text.trim()}"`); },
     onDraw: (text, at) => { if (!text.trim()) return; setMode('review'); send(`Draw this as a diagram:\n\n"${text.trim()}"`, { label: 'Draw · ' + text.trim().slice(0, 50) + (text.length > 50 ? '…' : ''), drawAt: at }); },
@@ -1420,6 +1432,8 @@ function commands() {
   out.push({ title: 'Save the review packet', hint: 'Markdown with rubric, claims and notes', run: savePacket });
   out.push({ title: 'Copy as Markdown', hint: 'the document', run: () => $('#copy').click() });
   out.push({ title: 'Publish to Confluence', hint: 'create or update the page', run: () => $('#publish-btn').click() });
+  out.push({ title: 'Dictate', hint: '\u2325D \u00b7 talk, it lands at the caret and gets cleaned up', run: () => rec.busy ? stopDictation() : startDictation() });
+  out.push({ title: 'Check this paragraph now', hint: 'live English fixes from the quick coach', run: () => liveCheck(true) });
   out.push({ title: 'Find in document', hint: '\u2318F \u00b7 find and replace', run: openFind });
   for (const [a, t] of [['left', 'Align the whole document left'], ['justify', 'Justify the whole document'], ['center', 'Center every block']]) out.push({ title: t, hint: 'alignment', run: () => { doc.alignAll(a); save(); } });
   out.push({ title: 'Focus mode', hint: 'hide everything but the text (\u2318\\)', run: () => setFocus(!state.focus) });
@@ -1480,6 +1494,104 @@ function tour(force) {
   next.onclick = () => { i++; if (i >= TOUR_STEPS.length) end(); else show(); };
   skip.onclick = end;
   show();
+}
+
+/* ---------- write fast: dictation (whisper.cpp on this Mac) and live English fixes (the quick coach) ---------- */
+let assistPrefs = { liveFix: true, cleanDictation: true };
+async function refreshAssistPrefs() { try { const c = await store.settings.get(); assistPrefs = { liveFix: c.liveFix !== false, cleanDictation: c.cleanDictation !== false }; } catch {} }
+const rec = { ctx: null, src: null, proc: null, stream: null, chunks: [], rate: 48000, since: 0, timer: null, busy: false };
+function wavFromFloat(chunks, rate) {
+  let n = 0; for (const c of chunks) n += c.length;
+  const all = new Float32Array(n); let o = 0; for (const c of chunks) { all.set(c, o); o += c.length; }
+  const ratio = rate / 16000, len = Math.floor(all.length / ratio), pcm = new Int16Array(len);
+  for (let i = 0; i < len; i++) { const s = Math.max(-1, Math.min(1, all[Math.floor(i * ratio)])); pcm[i] = s < 0 ? s * 0x8000 : s * 0x7FFF; }
+  const buf = new ArrayBuffer(44 + pcm.length * 2), v = new DataView(buf);
+  const str = (p, t) => { for (let i = 0; i < t.length; i++) v.setUint8(p + i, t.charCodeAt(i)); };
+  str(0, 'RIFF'); v.setUint32(4, 36 + pcm.length * 2, true); str(8, 'WAVE'); str(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, 16000, true); v.setUint32(28, 32000, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); str(36, 'data'); v.setUint32(40, pcm.length * 2, true);
+  new Int16Array(buf, 44).set(pcm);
+  let bin = ''; const bytes = new Uint8Array(buf); for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+function micLabel(text, on) { const b = $('#mic'); b.classList.toggle('on', !!on); b.title = text; const s = $('#saved'); if (s) { s.textContent = text; s.classList.toggle('show', !!text); } }
+async function startDictation() {
+  if (rec.busy) return;
+  try {
+    rec.stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+  } catch (e) { micLabel('Microphone not available: ' + (e.message || e), false); setTimeout(() => micLabel('', false), 4000); return; }
+  rec.ctx = new (window.AudioContext || window.webkitAudioContext)();
+  rec.rate = rec.ctx.sampleRate; rec.chunks = []; rec.since = Date.now();
+  rec.src = rec.ctx.createMediaStreamSource(rec.stream);
+  rec.proc = rec.ctx.createScriptProcessor(4096, 1, 1);
+  rec.proc.onaudioprocess = e => { rec.chunks.push(new Float32Array(e.inputBuffer.getChannelData(0))); };
+  rec.src.connect(rec.proc); rec.proc.connect(rec.ctx.destination);
+  rec.busy = true;
+  const tick = () => { const s = Math.round((Date.now() - rec.since) / 1000); micLabel(`\u25cf Recording ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} \u00b7 press \u2325D or the mic to stop`, true); };
+  tick(); rec.timer = setInterval(tick, 1000);
+}
+async function stopDictation() {
+  if (!rec.busy) return;
+  clearInterval(rec.timer);
+  try { rec.proc.disconnect(); rec.src.disconnect(); rec.stream.getTracks().forEach(t => t.stop()); await rec.ctx.close(); } catch {}
+  rec.busy = false;
+  const secs = (Date.now() - rec.since) / 1000;
+  if (secs < 0.6) { micLabel('', false); return; }
+  micLabel('Transcribing\u2026', true);
+  try {
+    const text = await store.transcribe(wavFromFloat(rec.chunks, rec.rate));
+    rec.chunks = [];
+    if (!text) { micLabel('Heard nothing.', false); setTimeout(() => micLabel('', false), 2000); return; }
+    await insertDictation(text);
+  } catch (e) { micLabel(String(e.message || e), false); setTimeout(() => micLabel('', false), 6000); }
+}
+/** Put dictated text where the caret is (document) or at the end of Notes, then let the quick coach clean it. */
+async function insertDictation(text) {
+  text = text.trim();
+  if (!$('#notes').hidden) { putText(NOTES, text, 'append'); micLabel('', false); return; }
+  showView('doc');
+  doc.insertParagraph(text);
+  state.docJson = doc.json(); save();
+  if (!assistPrefs.cleanDictation) { micLabel('', false); return; }
+  micLabel('Cleaning up\u2026', true);
+  try {
+    const clean = (await store.assist('reshape', text)).replace(/^["\u201c]|["\u201d]$/g, '').trim();
+    if (clean && clean !== text && doc.replaceBlockText(text, clean)) {
+      state.docJson = doc.json(); save(); renderMeta();
+      const s = $('#saved'); s.replaceChildren(el('span', { textContent: 'Cleaned up. ' })); const u = el('button', { type: 'button', className: 'undo', textContent: 'Undo' }); u.onclick = () => { doc.replaceBlockText(clean, text); state.docJson = doc.json(); save(); s.classList.remove('show'); s.textContent = 'Changes saved'; }; s.append(u); s.classList.add('show'); clearTimeout(undoTimer); undoTimer = setTimeout(() => { s.classList.remove('show'); s.textContent = 'Changes saved'; }, 8000);
+    } else micLabel('', false);
+  } catch (e) { micLabel('Could not clean up: ' + (e.message || e), false); setTimeout(() => micLabel('', false), 5000); }
+  $('#mic').classList.remove('on');
+}
+$('#mic').onclick = () => rec.busy ? stopDictation() : startDictation();
+document.addEventListener('keydown', e => { if (e.altKey && !e.metaKey && !e.ctrlKey && e.code === 'KeyD') { e.preventDefault(); rec.busy ? stopDictation() : startDictation(); } });
+
+/* live English fixes: the paragraph you paused on goes to the quick coach; its notes land as underlines */
+let liveTimer = null, liveRunning = false, livePending = false; const liveSeen = new Map();
+function scheduleLive() { if (!assistPrefs.liveFix || !inApp && !window.__selftestLive) return; clearTimeout(liveTimer); liveTimer = setTimeout(() => liveCheck(), 1500); }
+async function liveCheck(force) {
+  if (liveRunning) { livePending = true; return; }
+  const text = doc.currentBlockText().trim(), section = state.current;
+  if (!text || words(text) < 6 || (!force && liveSeen.get(section + '\u0000' + text))) return;
+  liveRunning = true;
+  try {
+    const reply = await store.assist('fix', text);
+    liveSeen.set(section + '\u0000' + text, true); if (liveSeen.size > 400) liveSeen.clear();
+    if (doc.currentBlockText().trim() !== text && !force) return; // moved on; the next pause will check again
+    // Replace earlier live notes whose words are no longer there.
+    for (const c of state.comments.filter(c => c.live && !c.resolved && c.section === section)) { if (!text.includes(c.quote)) { if (c.anchored) doc.unannotate(c.id); c.resolved = true; } }
+    let n = 0;
+    for (const m of reply.matchAll(TAG)) {
+      if (m[1] !== 'note') continue;
+      const a = attrs(m[2]); if (a.type && a.type !== 'english') continue;
+      const quote = (a.quote || '').trim(), fix = a.fix == null ? '' : a.fix;
+      if (!quote || !text.includes(quote) || quote === fix) continue;
+      if (state.comments.some(c => !c.resolved && c.quote === quote && c.fix === fix)) continue;
+      const c = { id: uid(), kind: 'english', quote, fix, rule: (a.rule || 'english').toLowerCase(), persona: '', severity: 'low', section, body: m[3].trim(), resolved: false, at: Date.now(), live: true };
+      c.anchored = !!doc.annotate(c.id, 'english', quote, section);
+      if (c.anchored) { state.comments.push(c); n++; }
+    }
+    if (n) { save(); renderComments(); }
+  } catch (e) { console.warn('live fix', e); }
+  finally { liveRunning = false; if (livePending) { livePending = false; scheduleLive(); } }
 }
 
 /* ---------- find and replace (⌘F): the document editor, or the Notes box ---------- */
@@ -2259,6 +2371,17 @@ async function renderSettings() {
   const cex = el('button', { type: 'button', className: 'btn', textContent: 'From documents you admire\u2026', title: 'Derive a type and style rules from one to three exemplar documents' }); cex.onclick = openExemplars;
   crow.append(cnew, cfrom, cex); ct.append(clist, crow); box.append(ct);
 
+  // Writing assistance: live fixes and dictation
+  const wa = el('section', { className: 'set-sec' });
+  wa.append(el('h2', { textContent: 'Writing assistance' }), el('p', { className: 'note', textContent: 'The quick coach works on the paragraph you pause on and on what you dictate. With a local model this is free and private; with a hosted quick coach it costs a small call per paragraph.' }));
+  const live = el('input', { type: 'checkbox', checked: cfg.liveFix !== false }); const livel = el('label', { className: 'row' }); livel.append(live, el('span', { textContent: 'Live English fixes: underline mistakes in the paragraph you paused on (about 5 s on a 12B local model).' }));
+  const clean = el('input', { type: 'checkbox', checked: cfg.cleanDictation !== false }); const cleanl = el('label', { className: 'row' }); cleanl.append(clean, el('span', { textContent: 'Clean up dictation: turn what you said into plain prose right after it lands (Undo available).' }));
+  const wm = el('input', { type: 'text', value: cfg.whisperModel || '', placeholder: 'auto: ~/.whisper-cpp/models/ggml-*.bin' }); const wml = el('label', { textContent: 'Whisper model (ggml .bin for whisper.cpp; \u2325D records, whisper-cli transcribes on this Mac)' }); wml.append(wm);
+  const wstat = el('small', { className: 'note', style: 'display:block;margin-top:4px', textContent: 'Checking whisper.cpp\u2026' });
+  store.whisper().then(w => { wstat.textContent = w.cli ? (w.model ? `whisper-cli at ${w.cli} \u00b7 model ${w.model}` : 'whisper-cli found, but no ggml model. Run: whisper-cpp-download-ggml-model small.en') : 'whisper-cli not found. Install with: brew install whisper-cpp (then download a model). macOS dictation (fn fn) still works in any text box.'; }).catch(() => { wstat.textContent = 'Dictation needs the desktop app.'; });
+  wml.append(wstat);
+  wa.append(livel, cleanl, wml); box.append(wa);
+
   // Style rules (workspace)
   const st = el('section', { className: 'set-sec' });
   st.append(el('h2', { textContent: 'Style rules' }), el('p', { className: 'note', textContent: 'Your house style, applied in every review, draft and Lint. Stored in the workspace as style.md so the whole team can share it. Empty uses the built-in rules.' }));
@@ -2280,8 +2403,8 @@ async function renderSettings() {
   saveBtn.onclick = async () => {
     msg.textContent = ''; err.textContent = '';
     try {
-      await store.settings.set({ agent: agent.value, command: cmd.value.trim(), args: args.value.trim(), localUrl: localUrl.value.trim(), model: model.value.trim(), quickAgent: qagent.value, quickModel: qmodel.value.trim(), effort: effort.value, skills: skills.value.split(',').map(x => x.trim()).filter(Boolean), useMySettings: mine.checked });
-      await store.style.set(styleBox.value); styleRules = styleBox.value; refreshCoachLabel(); warmCoach(true);
+      await store.settings.set({ agent: agent.value, command: cmd.value.trim(), args: args.value.trim(), localUrl: localUrl.value.trim(), model: model.value.trim(), quickAgent: qagent.value, quickModel: qmodel.value.trim(), liveFix: live.checked, cleanDictation: clean.checked, whisperModel: wm.value.trim(), effort: effort.value, skills: skills.value.split(',').map(x => x.trim()).filter(Boolean), useMySettings: mine.checked });
+      await store.style.set(styleBox.value); styleRules = styleBox.value; refreshCoachLabel(); warmCoach(true); refreshAssistPrefs();
       await store.feedback.set(fbBox.value); feedbackText = fbBox.value;
       msg.textContent = 'Saved. The next coach request uses these settings.';
     } catch (e) { err.textContent = String(e); }
@@ -2466,7 +2589,7 @@ store.ws.info().then(i => { $('#ws-crumb').textContent = i.name; }).catch(() => 
 store.style.get().then(t => { styleRules = t || ''; }).catch(() => {});
 loadCustomTemplates();
 store.feedback.get().then(t => { feedbackText = t || ''; }).catch(() => {});
-refreshCoachLabel();
+refreshCoachLabel(); refreshAssistPrefs();
 
 /* ---------- images and diagrams ---------- */
 let diagramReady = null;

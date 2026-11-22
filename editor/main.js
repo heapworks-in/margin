@@ -752,6 +752,22 @@ export function create({ element, content, hintFor, onChange, onSelect, onAsk, o
       return st.matches.length
     },
     findClear() { editor.view.dispatch(editor.state.tr.setMeta(findKey, { query: '', index: -1 })) },
+    /** Replace the text of the first textblock whose text equals `oldText`; returns true when found. */
+    replaceBlockText(oldText, newText) {
+      let hit = null
+      editor.state.doc.descendants((node, pos) => { if (hit) return false; if (node.isTextblock && node.textContent === oldText) { hit = { from: pos + 1, to: pos + 1 + node.content.size }; return false } })
+      if (!hit) return false
+      editor.view.dispatch(editor.state.tr.insertText(newText, hit.from, hit.to))
+      return true
+    },
+    /** Text of the textblock the caret is in. */
+    currentBlockText() { const $f = editor.state.selection.$from; return $f.parent.isTextblock ? $f.parent.textContent : '' },
+    /** Insert a new paragraph with `text` after the current block (or at the end), caret after it. */
+    insertParagraph(text) {
+      const $f = editor.state.selection.$from
+      const at = $f.parent.isTextblock && $f.parent.textContent ? $f.after($f.depth) : editor.state.selection.to
+      editor.chain().focus().insertContentAt(at, { type: 'paragraph', content: text ? [{ type: 'text', text }] : [] }).run()
+    },
     /** Alignment of every paragraph and heading at once. */
     alignAll(align) {
       let tr = editor.state.tr

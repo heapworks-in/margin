@@ -1,6 +1,6 @@
 [package]
 name = "margin"
-version = "0.14.0"
+version = "0.15.0"
 edition = "2021"
 
 [build-dependencies]
@@ -11,5 +11,5 @@ tauri = { version = "2", features = [] }
 serde_json = "1"
 base64 = "0.22"
 pdf-extract = "0.12"
-reqwest = { version = "0.13", default-features = false, features = ["blocking", "rustls", "json"] }
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "rustls", "json", "multipart"] }
 tauri-plugin-dialog = "2"

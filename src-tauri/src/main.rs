@@ -110,7 +110,7 @@ fn settings(app: &AppHandle) -> serde_json::Value {
     let mut s = cfg["settings"].clone();
     if !s.is_object() { s = serde_json::json!({}); }
     let defaults = serde_json::json!({
-        "agent": "claude", "command": "", "args": "", "localUrl": "http://localhost:11434", "quickAgent": "", "quickModel": "",
+        "agent": "claude", "command": "", "args": "", "localUrl": "http://localhost:11434", "quickAgent": "", "quickModel": "", "liveFix": true, "cleanDictation": true, "whisperModel": "",
         "model": "claude-opus-5-5", "effort": "medium", "skills": [], "useMySettings": false
     });
     for (k, v) in defaults.as_object().unwrap() { if s.get(k).is_none() { s[k] = v.clone(); } }
@@ -223,6 +223,101 @@ async fn ask(app: AppHandle, body: serde_json::Value, on_chunk: Channel<String>)
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/* ---------- write fast: dictation through whisper.cpp, and a tiny local assistant for one paragraph ---------- */
+const FIX_SYSTEM: &str = "You correct the English of one paragraph from a technical document. Return only <note quote=\"exact words\" fix=\"replacement\" rule=\"rule name\">one short sentence stating the rule</note> tags, one per mistake, at most 6, and nothing else. Each quote is copied exactly from the paragraph, 2 to 8 words, from one place. Keep the writer's meaning, facts and technical terms. Only grammar, spelling, wrong word choice and punctuation; no style advice. If the paragraph is correct, return nothing.";
+const RESHAPE_SYSTEM: &str = "The writer dictated this paragraph, so it is rough speech. Rewrite it as clean, plain prose in the writer's meaning and order: remove fillers, false starts and repetition, fix the grammar, keep every fact, number and name exactly, add nothing. Short sentences, active voice, no adverb padding, no em dashes, no jargon. Return only the rewritten paragraph, no quotes around it, no preamble.";
+
+fn whisper_model(s: &serde_json::Value) -> Option<PathBuf> {
+    if let Some(p) = s["whisperModel"].as_str().filter(|p| !p.trim().is_empty()) { let p = PathBuf::from(p.trim()); if p.exists() { return Some(p); } }
+    let home = std::env::var("HOME").unwrap_or_default();
+    for dir in [format!("{home}/.whisper-cpp/models"), format!("{home}/.cache/whisper.cpp"), "/opt/homebrew/share/whisper-cpp/models".to_string(), format!("{home}/models")] {
+        let Ok(rd) = std::fs::read_dir(&dir) else { continue };
+        let mut bins: Vec<PathBuf> = rd.flatten().map(|e| e.path()).filter(|p| p.extension().map(|x| x == "bin").unwrap_or(false) && p.file_name().map(|n| n.to_string_lossy().starts_with("ggml-")).unwrap_or(false)).collect();
+        // Prefer English models, then the larger ones: better words for a native-speed Mac.
+        let rank = |p: &PathBuf| { let n = p.file_name().unwrap().to_string_lossy().to_lowercase(); (if n.contains(".en") { 0 } else { 1 }, if n.contains("large") { 0 } else if n.contains("medium") { 1 } else if n.contains("small") { 2 } else if n.contains("base") { 3 } else { 4 }) };
+        bins.sort_by_key(rank);
+        if let Some(b) = bins.into_iter().next() { return Some(b); }
+    }
+    None
+}
+#[tauri::command]
+fn whisper_info(app: AppHandle) -> serde_json::Value {
+    let s = settings(&app);
+    serde_json::json!({ "cli": which("whisper-cli").map(|p| p.display().to_string()), "model": whisper_model(&s).map(|p| p.display().to_string()) })
+}
+/// A whisper-server kept alive so the model loads once, not on every sentence. Falls back to whisper-cli.
+static WHISPER_SERVER: std::sync::OnceLock<std::sync::Mutex<Option<(std::process::Child, PathBuf)>>> = std::sync::OnceLock::new();
+const WHISPER_PORT: u16 = 8178;
+fn whisper_server_ready(model: &Path) -> bool {
+    let cell = WHISPER_SERVER.get_or_init(|| std::sync::Mutex::new(None));
+    let mut slot = cell.lock().unwrap();
+    if let Some((child, m)) = slot.as_mut() { if m == model && matches!(child.try_wait(), Ok(None)) { return true; } let _ = child.kill(); }
+    *slot = None;
+    let Some(bin) = which("whisper-server") else { return false };
+    let Ok(child) = Command::new(bin).args(["-m", &model.to_string_lossy(), "--host", "127.0.0.1", "--port", &WHISPER_PORT.to_string(), "-t", "8", "-nt"]).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn() else { return false };
+    *slot = Some((child, model.to_path_buf()));
+    drop(slot);
+    let client = reqwest::blocking::Client::builder().timeout(std::time::Duration::from_secs(2)).build().unwrap();
+    for _ in 0..60 { if client.get(format!("http://127.0.0.1:{WHISPER_PORT}/")).send().is_ok() { return true; } std::thread::sleep(std::time::Duration::from_millis(500)); }
+    false
+}
+fn transcribe_server(wav: &Path) -> Result<String, String> {
+    let form = reqwest::blocking::multipart::Form::new().file("file", wav).map_err(|e| e.to_string())?.text("response_format", "text").text("temperature", "0.0");
+    let res = reqwest::blocking::Client::builder().timeout(std::time::Duration::from_secs(120)).build().map_err(|e| e.to_string())?
+        .post(format!("http://127.0.0.1:{WHISPER_PORT}/inference")).multipart(form).send().map_err(|e| e.to_string())?;
+    if !res.status().is_success() { return Err(format!("whisper-server answered {}", res.status())); }
+    let text = res.text().map_err(|e| e.to_string())?;
+    Ok(text.replace("[BLANK_AUDIO]", "").split_whitespace().collect::<Vec<_>>().join(" "))
+}
+/// Server when it can run, CLI otherwise.
+fn transcribe_any(cli: &Path, model: &Path, wav: &Path) -> Result<String, String> {
+    if whisper_server_ready(model) { if let Ok(t) = transcribe_server(wav) { return Ok(t); } }
+    transcribe_wav(cli, model, wav)
+}
+fn transcribe_wav(cli: &Path, model: &Path, wav: &Path) -> Result<String, String> {
+    let out = Command::new(cli).args(["-m", &model.to_string_lossy(), "-f", &wav.to_string_lossy(), "-nt", "-np", "-l", "en", "-t", "8"]).stdin(Stdio::null()).output().map_err(|e| format!("could not run whisper-cli: {e}"))?;
+    if !out.status.success() { return Err(format!("whisper-cli failed: {}", String::from_utf8_lossy(&out.stderr).chars().take(300).collect::<String>())); }
+    let text = String::from_utf8_lossy(&out.stdout).lines().map(str::trim).filter(|l| !l.is_empty()).collect::<Vec<_>>().join(" ");
+    Ok(text.replace("[BLANK_AUDIO]", "").trim().to_string())
+}
+/// 16 kHz mono WAV (base64) in, text out. Everything stays on this Mac.
+#[tauri::command]
+async fn transcribe(app: AppHandle, data: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        use base64::Engine;
+        let s = settings(&app);
+        let cli = which("whisper-cli").ok_or("whisper-cli is not on your PATH. Install it with `brew install whisper-cpp`.")?;
+        let model = whisper_model(&s).ok_or("No whisper model found. Put a ggml-*.bin in ~/.whisper-cpp/models (for example `whisper-cpp-download-ggml-model small.en`), or set its path in Settings.")?;
+        let bytes = base64::engine::general_purpose::STANDARD.decode(data.trim()).map_err(|e| e.to_string())?;
+        let dir = std::env::temp_dir().join("margin-dictation"); std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let wav = dir.join(format!("{}.wav", now_ms()));
+        std::fs::write(&wav, bytes).map_err(|e| e.to_string())?;
+        let text = transcribe_any(&cli, &model, &wav);
+        let _ = std::fs::remove_file(&wav);
+        text
+    }).await.map_err(|e| e.to_string())?
+}
+/// The quick coach on one paragraph: "fix" returns <note> tags, "reshape" returns the rewritten paragraph.
+#[tauri::command]
+async fn assist(app: AppHandle, kind: String, text: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let s = settings_for(&app, "quick");
+        let system = if kind == "reshape" { RESHAPE_SYSTEM } else { FIX_SYSTEM };
+        let mut out = String::new();
+        if s["agent"].as_str() == Some("local") {
+            let base = s["localUrl"].as_str().unwrap_or("http://localhost:11434");
+            let model = s["model"].as_str().unwrap_or("").trim().to_string();
+            let available = local::models(base)?;
+            let model = if available.iter().any(|m| *m == model) { model } else { available.into_iter().find(|m| !m.contains("cloud")).ok_or("No model is loaded on the local server.")? };
+            local::ask(base, &model, system, &text, &[], |t| out.push_str(t))?;
+        } else {
+            let run = run_config_from(&s);
+            agent_for(&app, &s)?.ask(system, &text, &[], &run, |t| out.push_str(t))?;
+        }
+        Ok(out.trim().to_string())
+    }).await.map_err(|e| e.to_string())?
 }
 
 /// Pre-warm the local model(s) in use: load them and cache the shared prompt prefix. Fire-and-forget.
@@ -755,7 +850,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(Coach::default())
-        .invoke_handler(tauri::generate_handler![ask, save_markdown, extract_pdf, ws_info, ws_use, ws_forget, reveal, docs_list, doc_create, doc_load, doc_save, doc_delete, asset_save, diagrams_list, diagram_save, diagram_load, diagram_delete, files_list, file_add, file_read, file_delete, library_load, library_save, confluence_fetch, confluence_comments, settings_get, settings_set, agents_discover, agent_models, read_files, warm, style_get, style_set, workspace_digest, templates_get, templates_set, feedback_get, feedback_set, doc_snapshot, history_list, history_read, confluence_publish])
+        .invoke_handler(tauri::generate_handler![ask, save_markdown, extract_pdf, ws_info, ws_use, ws_forget, reveal, docs_list, doc_create, doc_load, doc_save, doc_delete, asset_save, diagrams_list, diagram_save, diagram_load, diagram_delete, files_list, file_add, file_read, file_delete, library_load, library_save, confluence_fetch, confluence_comments, settings_get, settings_set, agents_discover, agent_models, read_files, warm, whisper_info, transcribe, assist, style_get, style_set, workspace_digest, templates_get, templates_set, feedback_get, feedback_set, doc_snapshot, history_list, history_read, confluence_publish])
         .run(tauri::generate_context!())
         .expect("error while running Margin");
 }
@@ -770,6 +865,27 @@ mod tests {
     }
 }
 
+#[cfg(test)]
+mod dictation_tests {
+    /// `cargo test transcribe_spoken -- --ignored --nocapture`: macOS `say` → ffmpeg → whisper.cpp → words.
+    #[test] #[ignore]
+    fn transcribe_spoken_sentence() {
+        let dir = std::env::temp_dir().join("margin-dictation-test"); std::fs::create_dir_all(&dir).unwrap();
+        let aiff = dir.join("t.aiff"); let wav = dir.join("t.wav");
+        assert!(std::process::Command::new("say").args(["-o", &aiff.to_string_lossy(), "The payments API is slow at month end because three clients send most of the traffic."]).status().unwrap().success());
+        assert!(std::process::Command::new("ffmpeg").args(["-y", "-loglevel", "error", "-i", &aiff.to_string_lossy(), "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", &wav.to_string_lossy()]).status().unwrap().success());
+        let cli = super::which("whisper-cli").expect("whisper-cli");
+        let model = super::whisper_model(&serde_json::json!({})).expect("a ggml model");
+        let started = std::time::Instant::now();
+        let text = super::transcribe_any(&cli, &model, &wav).unwrap();
+        println!("first: {:?} in {:.1}s with {}", text, started.elapsed().as_secs_f32(), model.display());
+        let again = std::time::Instant::now();
+        let text = super::transcribe_any(&cli, &model, &wav).unwrap();
+        println!("warm: {:?} in {:.1}s", text, again.elapsed().as_secs_f32());
+        let low = text.to_lowercase();
+        assert!(low.contains("payments") && low.contains("three clients"), "got {text:?}");
+    }
+}
 #[cfg(test)]
 mod discovery_tests {
     #[test]

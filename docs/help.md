@@ -27,7 +27,13 @@ Under the title: **For** who, **so that they** do what. Click **Brief ▾** for 
 
 The coach judges everything against this. A thin brief gets you generic feedback; a sharp brief gets you the question your VP will actually ask. Fill it before you ask for anything.
 
-## 4. Get words on the page
+## 4. Write fast: talk, then let the quick coach clean and correct
+
+- **Dictate**: press **⌥D** (or the mic button in the coach bar), talk, press it again. whisper.cpp transcribes on your Mac (nothing is sent anywhere) and the text lands at the caret as a new paragraph. Right after, the quick coach turns the raw speech into plain prose (fillers gone, grammar fixed, every fact kept), with **Undo** in the status line. On a 12B local model that is about five seconds. In Notes, dictation appends to the notes.
+- **Live English fixes**: the paragraph you pause on goes to the quick coach; mistakes come back underlined within a few seconds, each with a fix you can **Accept**. No thread, no buttons. Both switches live in Settings → Writing assistance; both are free and private with a local quick coach.
+- Setup once: `brew install whisper-cpp` and a model in `~/.whisper-cpp/models` (`whisper-cpp-download-ggml-model small.en` is fast; medium.en is more accurate). Settings shows what Margin found. macOS dictation (fn fn) still works in any text box if you prefer it.
+
+## 5. Get words on the page
 
 Start however you like. Three ways that work:
 
@@ -39,7 +45,7 @@ Start however you like. Three ways that work:
 
 Drafts the coach writes arrive as cards in the chat with **Insert** / **Replace**; nothing goes into your document without you clicking.
 
-## 5. Think it through with the coach (Interview mode)
+## 6. Think it through with the coach (Interview mode)
 
 The chat bar has three modes. **Interview** is for when the thinking is not done yet.
 
@@ -53,7 +59,7 @@ Every message in the thread carries its time; a coach reply also shows how long 
 
 Type anything in the box too. Broken English is fine; the coach reads meaning and never comments on your chat, only on the document.
 
-## 6. Review a section (Review mode)
+## 7. Review a section (Review mode)
 
 Put the cursor in a section and press **Review this section**. Notes appear as underlines in the text, coloured by kind: English, missing, fact, question, structure. A small badge next to the heading shows how many are open.
 
@@ -71,23 +77,23 @@ Put the cursor in a section and press **Review this section**. Notes appear as u
 
 Every quote the coach makes is checked against your text. A note that quotes words not in the document is sent back once for correction and dropped if it still does not match. You see "Checked quotes against the text" under each review.
 
-## 7. Add context
+## 8. Add context
 
 **+ Context** (top bar) opens a file dialog (or drop files onto the document) to attach what the coach should know: specs, tickets, dashboards exported as CSV, PDFs, screenshots. Files in the workspace's `files/` folder can be attached to any document. Attachments go to the coach with every message; they are never shown to anyone else.
 
-## 8. Diagrams and images
+## 9. Diagrams and images
 
 - `/diagram` opens Excalidraw inside the app. It is fully local, including its shape library (saved in the workspace). Click a diagram to edit it again.
 - **Draw**: select a paragraph that describes a flow or an architecture and press **Draw** in the toolbar. The coach returns boxes and arrows from what the text says, nothing more; the app lays it out as an editable diagram.
 - Paste or drop images; they are saved in the document's `assets/` folder and referenced from the Markdown copy.
 
-## 9. Before you share: the panel
+## 10. Before you share: the panel
 
 **Review document** (top right) convenes three reviewers chosen by document type, for example Skeptical VP, Staff peer and On-call SRE for a design doc. Each note names its reviewer. After the notes comes a rubric score on eight dimensions (bottom line, evidence, options, risk honesty, audience fit, structure, economy, actionability) and a verdict: **SHIP** or **REVISE**. The status bar shows "Rubric 3.4 · REVISE"; click it for the table with one line of evidence per score.
 
 Then **Rehearse** mode. **Start the meeting**: the panel asks its hardest question. Answer in the box as you would out loud. Each answer is graded 1 to 5 with one line of why; a good answer the document does not yet say becomes a draft so it lands in the text. **Next question** until **How did it go?** gives the panel's verdict and the top three things to fix. The running score sits in the status bar. This is the review meeting, practised in private.
 
-## 10. Learn from it
+## 11. Learn from it
 
 - **Lessons** (status bar, right) tallies the English rules you keep hitting across all your documents. **Teach me** on any rule gives three sentences and one exercise. The count per review is shown so you can watch it fall.
 - **History** (status bar): a snapshot is taken after every review. Click one for a line diff against the current text and the rubric trend.
@@ -95,13 +101,13 @@ Then **Rehearse** mode. **Start the meeting**: the panel asks its hardest questi
 - **Review packet** (Export menu): one Markdown file with the Brief, the ship checks, the panel rubric with evidence, the reader's verdict, the claim ledger and the open notes, followed by the document. Attach it when you send the document: reviewers see the work was done.
 - **Learn from feedback** (Review mode): after the real review, paste the comments you received, or **Pull comments from Confluence** straight from the page you published to. The coach compares them with its own notes, says what it missed and what it over-flagged, and writes "Weight:" lines into the workspace's `feedback.md`. Every later panel reads that file, so the coach gets closer to your actual reviewers over time. Edit it any time in Settings.
 
-## 11. Ship it
+## 12. Ship it
 
 The status bar's **Ship n/5** is the gate: no high-severity notes open, every claim sourced, no machine-prose tells, the panel says SHIP at 4.0 or better, and your reader does not say no. Click it any time to see which are met. Copy, save and publish run the same checklist first; if something is not met you see the list and can go ahead anyway, knowingly.
 
 **Export**: copy as Markdown, save a `.md` to Downloads, or **Publish to Confluence** (creates a page under a parent page you paste; publishing again updates the same page). Comments are never exported. Diagrams and images stay in Margin; a placeholder marks them.
 
-## 12. Keyboard and shortcuts
+## 13. Keyboard and shortcuts
 
 - **⌘F** finds in the document (or in Notes): matches are highlighted, Enter and Shift-Enter step through them, **Replace** opens replace-one / replace-all. Esc closes.
 - **Alignment**: select text and use the toolbar's left / center / right / justify buttons for that block, or ⌘K → *Justify the whole document*. Alignment stays in the document; the Markdown export has no way to carry it.
@@ -111,7 +117,7 @@ The status bar's **Ship n/5** is the gate: no high-severity notes open, every cl
 - First launch shows a four-step tour of the spine, the Brief, the coach and the status bar; **Take the tour** in the palette replays it.
 - The Library shows each document's readiness (Ship n/5 or the real-review score) and its decision deadline, and the workspace line counts documents ready to ship.
 
-## 13. Settings
+## 14. Settings
 
 - **Default data folder**: switch between workspaces or create one.
 - **Coach agent**: the bundled Claude Code, anything found on your PATH, or a custom ACP command.
@@ -120,7 +126,7 @@ The status bar's **Ship n/5** is the gate: no high-severity notes open, every cl
 - **Style rules**: your house style, applied in every review and by Lint. Shared with the team through the workspace.
 - **Reviewer feedback**: what Learn from feedback collected.
 
-## 14. A good session, start to finish
+## 15. A good session, start to finish
 
 1. Create the document; let **Which type?** choose. Fill the Brief, especially the objection.
 2. **Thesis**. If it is blocked, answer the questions first; that is the real work.
@@ -131,6 +137,6 @@ The status bar's **Ship n/5** is the gate: no high-severity notes open, every cl
 7. **Rehearse** the meeting once.
 8. **TL;DR**, export, share. After the real review, **Learn from feedback**.
 
-## 15. Privacy
+## 16. Privacy
 
 Documents, diagrams, attachments and history are plain files in your workspace. The app makes no network requests of its own; the only traffic is the coach process you chose talking to its own service (Claude Code to Anthropic, Devin to Cognition, and so on). Excalidraw is bundled with its fonts and library and never calls home. The Confluence token is stored only if you tick Remember.

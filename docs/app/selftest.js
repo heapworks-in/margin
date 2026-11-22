@@ -255,6 +255,26 @@
     closeFind(); showView('doc');
   });
 
+  await step('dictation and live fixes (mock)', async () => {
+    showView('doc'); setCurrent('Open questions'); doc.reveal('Open questions');
+    const sec = sections().find(s => s.title === 'Open questions'); doc.editor.commands.setTextSelection(sec.to);
+    assistPrefs.cleanDictation = true;
+    await insertDictation('so the payments api get slow at month end um because three clients send most of the traffic');
+    ok('dictation lands and is cleaned up', /The payments API gets slow at month end because three clients send most of the traffic\./.test(sectionText('Open questions')), sectionText('Open questions').slice(-90));
+    ok('clean-up offers Undo', !!document.querySelector('#saved .undo'));
+    document.querySelector('#saved .undo').click();
+    ok('undo restores the raw words', /um because/.test(sectionText('Open questions')));
+    window.__selftestLive = true; assistPrefs.liveFix = true;
+    doc.setSection('Open questions', 'the api get slow when three clients send most of the traffic at month end', 'replace');
+    const s2 = sections().find(s => s.title === 'Open questions'); doc.editor.commands.setTextSelection(s2.to - 2); setCurrent('Open questions');
+    ok('caret sits in the paragraph', words(doc.currentBlockText()) >= 6, doc.currentBlockText());
+    await liveCheck(true);
+    const live = state.comments.filter(c => c.live && !c.resolved);
+    ok('live fix underlines the mistake', live.length >= 1 && live[0].anchored && live[0].fix === 'API gets slow', JSON.stringify(live.map(c => c.quote)));
+    ok('wav encoder produces a RIFF header', atob(wavFromFloat([new Float32Array(1600)], 16000)).startsWith('RIFF'));
+    window.__selftestLive = false;
+  });
+
   await step('review packet and outcome', async () => {
     const pk = reviewPacket();
     ok('packet has brief, checks, rubric, claims and the document', ['## Brief', '## Ship checks', '## Panel rubric', '## Claims and sources', '## Context and problem'].every(h => pk.includes(h)));
